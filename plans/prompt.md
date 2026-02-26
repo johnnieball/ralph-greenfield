@@ -1,0 +1,344 @@
+# INPUTS
+
+Read these files in order:
+
+1. `CLAUDE.md` - Project-specific patterns, conventions, and commands. This is your operating manual.
+2. `plans/prd.json` - The product requirements document containing all user stories.
+3. `progress.txt` - Start with the **Codebase Patterns** section at the top. These are consolidated learnings from previous iterations. Read them before doing anything else. Then read the full log to understand recent work.
+
+The last 10 RALPH commits (SHA, date, full message) have been appended to the bottom of this prompt by ralph.sh. Review them to understand what work has been done recently and avoid duplicating effort.
+
+# TASK SELECTION
+
+Pick the **highest priority** user story in `plans/prd.json` where `passes: false`.
+
+Make each task the smallest possible unit of work. We don't want to outrun our headlights. One small, well-tested change per iteration.
+
+If there are **no remaining stories** with `passes: false`, emit `<promise>COMPLETE</promise>` and stop.
+
+ONE task per iteration - this is non-negotiable. Do not batch. Do not "quickly knock out" a second story. One story, done properly, verified, committed.
+
+# EXPLORATION
+
+Explore the repo and fill your context window with relevant information that will allow you to complete the task.
+
+Read existing tests to understand testing patterns before writing new ones. Look at naming conventions, assertion styles, test structure, and how mocks (if any) are used.
+
+If this task involves writing code, read the TDD skill at `skills/tdd/SKILL.md` to internalise the methodology before proceeding.
+
+Understand the shape of the code you will be changing. Read the files you will modify. Read their tests. Read their callers. Do not start coding until you understand the local context.
+
+# RED (Write Failing Test)
+
+Write ONE failing test for the current task.
+
+**Rules:**
+
+- The test must describe **behaviour through the public interface**, not implementation details. Test what the code does, not how it does it.
+- Write ONE test confirming ONE thing. If the test name contains "and", split it.
+- The test name must clearly describe the expected behaviour.
+- Use real code. Mock only at **system boundaries** (external APIs, databases, time, file system). Never mock your own code.
+- Do NOT write multiple tests upfront. That is horizontal slicing. Write one test, make it pass, then write the next.
+
+**Verify RED - Watch It Fail:**
+
+Run the test. This step is **mandatory. Never skip.**
+
+Confirm:
+- The test **fails** (not errors - fails)
+- The failure message is what you expect
+- It fails because the **feature is missing**, not because of a typo or import error
+
+If the test passes immediately, you are testing existing behaviour. Fix the test.
+
+If the test errors, fix the error and re-run until it fails correctly.
+
+# GREEN (Minimal Implementation)
+
+Write the simplest code that makes the failing test pass.
+
+Do not add features the test does not require. Do not refactor other code. Do not "improve" beyond what the test demands. Do not add options, configuration, or flexibility that no test exercises.
+
+**Verify GREEN - Watch It Pass:**
+
+Run the test. Confirm it passes. Then run **ALL** tests. Confirm everything is green.
+
+If the test still fails, fix the **implementation** - not the test.
+
+If other tests broke, fix them now.
+
+# REFACTOR
+
+After all tests are green, look for refactor candidates:
+
+- Duplication
+- Long methods
+- Shallow modules
+- Feature envy
+- Primitive obsession
+- Unclear names
+
+**Never refactor while RED.** Get to GREEN first.
+
+Run tests after **each** refactor step. If anything goes red, undo the refactor and try again.
+
+If this task has multiple behaviours to implement, loop back to RED for the next behaviour. If the task is complete, continue to FEEDBACK LOOPS.
+
+# FEEDBACK LOOPS
+
+Before committing, run the full verification suite:
+
+```bash
+bun run test
+bun run typecheck
+bun run lint
+```
+
+If `bun run lint` does not exist, skip it.
+
+**From the Iron Law of Verification:**
+
+If you have not run the verification command **in this message**, you cannot claim it passes. NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE.
+
+The Gate Function:
+1. IDENTIFY: What command proves this claim?
+2. RUN: Execute the full command (fresh, complete)
+3. READ: Full output, check exit code, count failures
+4. VERIFY: Does output confirm the claim?
+5. ONLY THEN: Make the claim
+
+If anything fails, fix it before committing. Do NOT commit broken code.
+
+# COMMIT
+
+Update the PRD first: set `passes: true` for the completed story in `plans/prd.json`. This must be included in the same commit.
+
+Commit ALL changes with the message format:
+
+```
+RALPH: feat: [US-XXX] - [Story Title]
+
+Task completed: <brief description>
+Key decisions: <any architectural or design decisions>
+Files changed: <list>
+Blockers/notes: <anything the next iteration should know>
+```
+
+# PROGRESS
+
+Append to `progress.txt` (never replace existing content):
+
+```
+## [Date/Time] - [Story ID]
+- What was implemented
+- Files changed
+- **Learnings for future iterations:**
+  - Patterns discovered
+  - Gotchas encountered
+  - Useful context
+---
+```
+
+If you discover a **reusable pattern** that future iterations should know about, add it to the `## Codebase Patterns` section at the **top** of `progress.txt`. Only add patterns that are general and reusable, not story-specific details.
+
+Check if any directories you edited have nearby `CLAUDE.md` files. If you discovered something future iterations should know (API conventions, gotchas, dependencies between files, testing approaches), add it there.
+
+# RALPH_STATUS
+
+At the end of your response, ALWAYS include this status block:
+
+```
+---RALPH_STATUS---
+STATUS: IN_PROGRESS | COMPLETE | BLOCKED
+TASKS_COMPLETED_THIS_LOOP: <number>
+FILES_MODIFIED: <number>
+TESTS_STATUS: PASSING | FAILING | NOT_RUN
+WORK_TYPE: IMPLEMENTATION | TESTING | DOCUMENTATION | REFACTORING
+EXIT_SIGNAL: false | true
+RECOMMENDATION: <one line summary of what to do next>
+---END_RALPH_STATUS---
+```
+
+## When to set EXIT_SIGNAL: true
+
+Set EXIT_SIGNAL to **true** when ALL of these conditions are met:
+1. All stories in prd.json have `passes: true`
+2. All tests are passing (or no tests exist for valid reasons)
+3. No errors or warnings in the last execution
+4. All requirements from the PRD are implemented
+5. You have nothing meaningful left to implement
+
+## Exit Scenarios (Specification by Example)
+
+Ralph's circuit breaker and response analyser use these scenarios to detect completion. Each scenario shows the exact conditions and expected behaviour.
+
+### Scenario 1: Successful Project Completion
+**Given**:
+- All stories in plans/prd.json have `passes: true`
+- Last test run shows all tests passing
+- No errors in recent output
+- All requirements from the PRD are implemented
+
+**When**: You evaluate project status at end of loop
+
+**Then**: You must output:
+```
+---RALPH_STATUS---
+STATUS: COMPLETE
+TASKS_COMPLETED_THIS_LOOP: 1
+FILES_MODIFIED: 1
+TESTS_STATUS: PASSING
+WORK_TYPE: DOCUMENTATION
+EXIT_SIGNAL: true
+RECOMMENDATION: All requirements met, project ready for review
+---END_RALPH_STATUS---
+```
+
+**Ralph's Action**: Detects EXIT_SIGNAL=true, gracefully exits loop with success message
+
+### Scenario 2: Test-Only Loop Detected
+**Given**:
+- Last 3 loops only executed tests (bun run test, etc.)
+- No new files were created
+- No existing files were modified
+- No implementation work was performed
+
+**When**: You start a new loop iteration
+
+**Then**: You must output:
+```
+---RALPH_STATUS---
+STATUS: IN_PROGRESS
+TASKS_COMPLETED_THIS_LOOP: 0
+FILES_MODIFIED: 0
+TESTS_STATUS: PASSING
+WORK_TYPE: TESTING
+EXIT_SIGNAL: false
+RECOMMENDATION: All tests passing, no implementation needed
+---END_RALPH_STATUS---
+```
+
+**Ralph's Action**: Increments test_only_loops counter, exits after 3 consecutive test-only loops
+
+### Scenario 3: Stuck on Recurring Error
+**Given**:
+- Same error appears in last 5 consecutive loops
+- No progress on fixing the error
+- Error message is identical or very similar
+
+**When**: You encounter the same error again
+
+**Then**: You must output:
+```
+---RALPH_STATUS---
+STATUS: BLOCKED
+TASKS_COMPLETED_THIS_LOOP: 0
+FILES_MODIFIED: 2
+TESTS_STATUS: FAILING
+WORK_TYPE: DEBUGGING
+EXIT_SIGNAL: false
+RECOMMENDATION: Stuck on [error description] - human intervention needed
+---END_RALPH_STATUS---
+```
+
+**Ralph's Action**: Circuit breaker detects repeated errors, opens circuit after 5 loops
+
+### Scenario 4: No Work Remaining
+**Given**:
+- All tasks in prd.json are complete
+- You analyse the PRD and find nothing new to implement
+- Code quality is acceptable
+- Tests are passing
+
+**When**: You search for work to do and find none
+
+**Then**: You must output:
+```
+---RALPH_STATUS---
+STATUS: COMPLETE
+TASKS_COMPLETED_THIS_LOOP: 0
+FILES_MODIFIED: 0
+TESTS_STATUS: PASSING
+WORK_TYPE: DOCUMENTATION
+EXIT_SIGNAL: true
+RECOMMENDATION: No remaining work, all PRD stories implemented
+---END_RALPH_STATUS---
+```
+
+**Ralph's Action**: Detects completion signal, exits loop immediately
+
+### Scenario 5: Making Progress
+**Given**:
+- Tasks remain in prd.json with `passes: false`
+- Implementation is underway
+- Files are being modified
+- Tests are passing or being fixed
+
+**When**: You complete a task successfully
+
+**Then**: You must output:
+```
+---RALPH_STATUS---
+STATUS: IN_PROGRESS
+TASKS_COMPLETED_THIS_LOOP: 1
+FILES_MODIFIED: 7
+TESTS_STATUS: PASSING
+WORK_TYPE: IMPLEMENTATION
+EXIT_SIGNAL: false
+RECOMMENDATION: Continue with next task from prd.json
+---END_RALPH_STATUS---
+```
+
+**Ralph's Action**: Continues loop, circuit breaker stays CLOSED (normal operation)
+
+### Scenario 6: Blocked on External Dependency
+**Given**:
+- Task requires external API, library, or human decision
+- Cannot proceed without missing information
+- Have tried reasonable workarounds
+
+**When**: You identify the blocker
+
+**Then**: You must output:
+```
+---RALPH_STATUS---
+STATUS: BLOCKED
+TASKS_COMPLETED_THIS_LOOP: 0
+FILES_MODIFIED: 0
+TESTS_STATUS: NOT_RUN
+WORK_TYPE: IMPLEMENTATION
+EXIT_SIGNAL: false
+RECOMMENDATION: Blocked on [specific dependency] - need [what's needed]
+---END_RALPH_STATUS---
+```
+
+**Ralph's Action**: Logs blocker, may exit after multiple blocked loops
+
+## What NOT to do
+- Do NOT continue with busy work when EXIT_SIGNAL should be true
+- Do NOT run tests repeatedly without implementing new features
+- Do NOT refactor code that is already working fine
+- Do NOT add features not in the PRD
+- Do NOT forget to include the status block (Ralph depends on it!)
+
+# Protected Files (DO NOT MODIFY)
+
+The following files and directories are part of Ralph's infrastructure. NEVER delete, move, rename, or overwrite these under any circumstances:
+
+- `plans/` (entire directory - prompt.md, ralph.sh, prd.json structure)
+- `skills/` (entire directory and all contents)
+- `progress.txt` (append only - never replace, never delete content)
+- `.ralphrc` (project configuration)
+- `CLAUDE.md` (update Codebase Patterns section only - never delete existing content)
+
+When performing cleanup, refactoring, or restructuring tasks: these files are NOT part of your project code. They are Ralph's internal control files that keep the development loop running. Deleting them will break Ralph and halt all autonomous development.
+
+# Final Rules
+
+ONLY WORK ON A SINGLE TASK.
+
+Keep CI green.
+
+If anything blocks your completion of the task, output `<promise>ABORT</promise>`.
+
+Using "should", "probably", "seems to" before running verification is a RED FLAG. Run the command first, then make claims.

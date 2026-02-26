@@ -1,0 +1,9 @@
+# Ralph Progress Log
+
+## Codebase Patterns
+(Patterns will be added here by Ralph as it discovers reusable conventions)
+
+---
+
+Started: (date will be filled by first iteration)
+---
