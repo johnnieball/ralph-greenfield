@@ -1,17 +1,17 @@
 # Eval Run Scorecard
 
-**Run:** [timestamp]
+**Run:** {{TIMESTAMP}}
 **Prompt version:** [git SHA or description]
-**Toy project:** calculator
+**Toy project:** {{TOY_PROJECT}}
 
 ## Results
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| Stories completed | /5 | |
-| Total iterations | | |
-| Exit condition | | clean exit / circuit breaker / max iterations |
-| Exit code | | 0 = success, 1 = failure |
+| Stories completed | /{{STORY_COUNT}} | |
+| Total iterations | {{ITERATION_COUNT}} | |
+| Exit condition | {{EXIT_CONDITION}} | clean exit / circuit breaker / max iterations |
+| Exit code | {{EXIT_CODE}} | 0 = success, 1 = failure |
 
 ## Behaviour Assessment
 
@@ -27,6 +27,8 @@ Score each 1-5 (1=broken, 3=acceptable, 5=excellent):
 | Commit message format | | |
 | No gold-plating (stayed within PRD) | | |
 | Read reference files when appropriate | | |
+
+{{AUDIT_POINTS}}
 
 ## Failure Modes Observed
 

@@ -1,0 +1,159 @@
+{
+  "project": "task-queue-eval",
+  "branchName": "ralph/initial-build",
+  "description": "A task queue library that accepts jobs, executes them with retry logic, and reports status. Designed to stress-test the Ralph loop across architectural decisions, system boundary mocking, cross-module refactoring, and ambiguous requirements.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create and retrieve a job",
+      "description": "Users can create a job with a name and an async handler function, then retrieve it by ID. Jobs start in 'pending' status.",
+      "acceptanceCriteria": [
+        "createJob(name, handler) returns a job object with a unique id, name, status 'pending', and createdAt timestamp",
+        "getJob(id) returns the job object",
+        "getJob with a non-existent ID throws a JobNotFoundError"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Tracer bullet. Establishes the core data model. The agent must decide on the module structure here - this choice will ripple through every subsequent story."
+    },
+    {
+      "id": "US-002",
+      "title": "Execute a job",
+      "description": "Users can execute a pending job. The handler function is called, and the job status transitions through 'running' to 'completed' or 'failed'.",
+      "acceptanceCriteria": [
+        "execute(id) runs the job's handler function",
+        "Job status is 'running' while the handler is executing",
+        "Job status becomes 'completed' when handler resolves",
+        "Job status becomes 'failed' when handler rejects, and the error message is stored on the job",
+        "Executing a job that is not in 'pending' status throws an InvalidStateError",
+        "Job has a startedAt timestamp set when execution begins and a completedAt timestamp set when it finishes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "First async behaviour. The agent must mock time for timestamp tests (system boundary). The 'running' status requirement means the test needs to observe status mid-execution - this is tricky and tests whether the agent can write async tests properly."
+    },
+    {
+      "id": "US-003",
+      "title": "Retry failed jobs",
+      "description": "Jobs can be configured with a retry policy. When a job fails, it is automatically retried up to the configured number of times with a delay between attempts.",
+      "acceptanceCriteria": [
+        "createJob accepts an optional retryPolicy: { maxRetries: number, delayMs: number }",
+        "When a job fails and has retries remaining, it is automatically re-executed after delayMs milliseconds",
+        "Job status returns to 'pending' between retries",
+        "Job tracks the current attempt number (starting from 1)",
+        "After all retries are exhausted, job status is 'failed' and all error messages are preserved in an errors array",
+        "A job with no retry policy fails immediately with no retries"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "This story forces the agent to refactor US-002's execution logic. The simple execute-and-set-status flow must now support retry loops. Tests must mock timers (setTimeout/delay) - this is a system boundary. Watch for: does the agent refactor cleanly or bolt retry logic on top?"
+    },
+    {
+      "id": "US-004",
+      "title": "Job event callbacks",
+      "description": "Users can register callback functions that are invoked when job state changes occur.",
+      "acceptanceCriteria": [
+        "onStateChange(id, callback) registers a listener for a specific job",
+        "Callback receives { jobId, previousStatus, newStatus, timestamp } when job status changes",
+        "Multiple callbacks can be registered for the same job",
+        "Callbacks are invoked in registration order",
+        "If a callback throws, it does not prevent other callbacks from running or affect job execution",
+        "Callbacks are not invoked for state changes that occurred before registration"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Observer pattern. This crosses module boundaries - the event system must integrate with both job creation and execution. The 'callback throws' requirement is a subtle error-handling case. Watch for: does the agent test the error isolation properly, or just test the happy path?"
+    },
+    {
+      "id": "US-005",
+      "title": "Job queue with concurrency control",
+      "description": "Jobs are processed through a queue with configurable concurrency. Instead of executing jobs immediately, they are enqueued and processed up to N at a time.",
+      "acceptanceCriteria": [
+        "createQueue({ concurrency: number }) creates a queue that processes at most N jobs simultaneously",
+        "queue.add(name, handler, options?) enqueues a job and returns the job object",
+        "Jobs are started in FIFO order as concurrency slots become available",
+        "When a running job completes or fails (after retries exhausted), the next queued job starts",
+        "queue.getStats() returns { pending, running, completed, failed } counts",
+        "queue.drain() returns a promise that resolves when all jobs are complete (no pending or running)"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Major architectural shift. The agent must either refactor to make the queue the primary interface wrapping the job system, or build the queue as a layer on top. This tests whether the agent can handle a story that changes the shape of the API. The drain() promise is subtle to test correctly."
+    },
+    {
+      "id": "US-006",
+      "title": "Persistent job logging",
+      "description": "All job state transitions and execution results are written to a log file for debugging and auditing.",
+      "acceptanceCriteria": [
+        "Each state transition writes a JSON line to a log file at a configurable path",
+        "Log entries include: timestamp, jobId, jobName, event type ('state_change' | 'execution_start' | 'execution_end' | 'retry'), and relevant data",
+        "The logger is injected as a dependency, not hardcoded to the file system",
+        "A default FileLogger implementation is provided that appends JSON lines to a file",
+        "If logging fails, job execution is not affected",
+        "Log file is created if it does not exist"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "System boundary story. The agent MUST use dependency injection here - the file system is a system boundary that should be mocked in tests. The 'injected as a dependency' criterion is explicit about this. Watch for: does the agent use DI correctly, or does it mock fs directly? Does it test the FileLogger separately with a real temp file?"
+    },
+    {
+      "id": "US-007",
+      "title": "Job timeout",
+      "description": "Jobs can have a maximum execution time. If a job exceeds its timeout, it is forcibly failed.",
+      "acceptanceCriteria": [
+        "createJob accepts an optional timeoutMs in its options",
+        "If a job's handler does not resolve within timeoutMs, the job is failed with a TimeoutError",
+        "The handler's execution is aborted (e.g. via AbortController signal passed to the handler)",
+        "Timeout interacts correctly with retry logic - a timed-out job retries if retries are available",
+        "A job with no timeout runs indefinitely"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "This retrofits into the existing execution pipeline. The AbortController requirement means the handler signature changes - handlers now receive a signal. This could break existing tests if the agent isn't careful. Tests must mock timers. Watch for: does the agent update existing handler signatures cleanly, or does it create a mess?"
+    },
+    {
+      "id": "US-008",
+      "title": "Job priority",
+      "description": "Jobs in the queue can have a priority level. Higher-priority jobs are processed before lower-priority ones, regardless of insertion order.",
+      "acceptanceCriteria": [
+        "queue.add accepts an optional priority (integer, higher number = higher priority, default 0)",
+        "When a concurrency slot opens, the highest-priority pending job is started next",
+        "Jobs with equal priority are processed in FIFO order",
+        "Changing queue behaviour does not break existing FIFO tests (priority 0 = default = FIFO)"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Requires changing the queue's internal data structure from a simple array to a priority-aware structure. The last acceptance criterion explicitly checks backward compatibility. Watch for: does the agent verify existing tests still pass after the refactor?"
+    },
+    {
+      "id": "US-009",
+      "title": "Graceful shutdown",
+      "description": "The queue can be shut down gracefully, allowing running jobs to complete but not starting new ones.",
+      "acceptanceCriteria": [
+        "queue.shutdown() returns a promise that resolves when all currently running jobs have completed",
+        "After shutdown is called, no new jobs are started from the queue",
+        "Jobs added after shutdown is called are rejected with a QueueShutdownError",
+        "If a running job fails during shutdown, it is not retried",
+        "shutdown() can be called multiple times safely (idempotent)"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "State machine complexity. The queue now has a lifecycle (active/shutting-down/shut-down). This interacts with retry logic (no retries during shutdown) and the drain() promise. Watch for: does the agent handle the interaction between shutdown and retry correctly?"
+    },
+    {
+      "id": "US-010",
+      "title": "Typed job results",
+      "description": "Job handlers return typed results that can be retrieved after completion.",
+      "acceptanceCriteria": [
+        "createJob<T> accepts a handler that returns Promise<T>",
+        "Completed jobs have a result field containing the handler's return value",
+        "getJob<T>(id) returns a typed job with result: T when completed",
+        "job.toJSON() returns a serialisable representation (result included when complete, errors included when failed)",
+        "The result field is undefined for jobs that have not completed"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "TypeScript generics. This retrofits type parameters onto the existing job system. The agent needs to update createJob, getJob, and the Job type without breaking existing code. The toJSON() method tests serialisation awareness. Watch for: does the agent handle the generic type threading correctly through the queue layer too?"
+    }
+  ]
+}

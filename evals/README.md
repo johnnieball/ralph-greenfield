@@ -25,8 +25,17 @@ Tests that the project scaffolds correctly: `bun install`, `bun run test`, `bun 
 End-to-end eval using real API calls against toy projects. Runs the full Ralph loop and captures results for manual scoring.
 
 ```bash
-./evals/run-eval.sh prompt
+./evals/run-eval.sh prompt                 # calculator (default, 15 iterations)
+./evals/run-eval.sh prompt calculator      # explicit calculator
+./evals/run-eval.sh prompt task-queue      # task-queue (20 iterations default)
+./evals/run-eval.sh prompt task-queue 25   # task-queue with custom iteration limit
 ```
+
+#### Toy Projects
+
+**calculator** — Baseline project. 5 simple stories (add, subtract, multiply, divide, expression parser). Validates the basic loop works: vertical slicing, TDD, clean exit. Run this first.
+
+**task-queue** — Stress-test project. 10 stories covering architectural decisions, async testing, refactoring existing code, system boundary mocking (timers, file system), cross-module integration, dependency injection, and TypeScript generics. Designed to expose failure modes that trivial projects cannot. Run this after the calculator baseline passes.
 
 ## Directory Layout
 
@@ -50,6 +59,9 @@ evals/
     calculator/
       prd.json           # Toy PRD with 5 user stories
       expected.md        # What a successful run looks like
+    task-queue/
+      prd.json           # Stress-test PRD with 10 user stories
+      expected.md        # Expected outcomes and failure modes to watch for
   runs/                  # Gitignored — prompt eval output goes here
     .gitkeep
 ```

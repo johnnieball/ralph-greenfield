@@ -37,7 +37,6 @@ assert_exit_code() {
 }
 
 setup_temp_repo() {
-  local ralphrc_content="$1"
   local tmpdir
   tmpdir=$(mktemp -d)
   TMPDIR_PATHS+=("$tmpdir")
@@ -54,27 +53,26 @@ setup_temp_repo() {
   cp "$REPO_ROOT/plans/ralph.sh" plans/
   cp "$REPO_ROOT/plans/prompt.md" plans/
 
-  echo "$ralphrc_content" > .ralphrc
+  cat > .ralphrc << 'EOF'
+MAX_CALLS_PER_HOUR=100
+MAX_ITERATIONS=1
+CB_NO_PROGRESS_THRESHOLD=5
+CB_SAME_ERROR_THRESHOLD=5
+ALLOWED_TOOLS=""
+EOF
 
   mkdir -p "$tmpdir/bin"
   cp "$SCRIPT_DIR/mock-claude.sh" "$tmpdir/bin/claude"
   chmod +x "$tmpdir/bin/claude"
   export PATH="$tmpdir/bin:$PATH"
-  export RALPH_SKIP_KICKOFF=1
 }
 
-# --- Subtest 1: No-progress circuit breaker ---
-echo "Subtest: No-progress circuit breaker"
+# --- Subtest 1: ralph.sh fails without kickoff and without skip ---
+echo "Subtest: Gate blocks without kickoff"
 
-setup_temp_repo "$(cat <<'EOF'
-MAX_CALLS_PER_HOUR=100
-MAX_ITERATIONS=10
-CB_NO_PROGRESS_THRESHOLD=2
-CB_SAME_ERROR_THRESHOLD=10
-ALLOWED_TOOLS=""
-EOF
-)"
-export MOCK_SCENARIO=no-commit
+setup_temp_repo
+unset RALPH_SKIP_KICKOFF
+export MOCK_SCENARIO=normal
 
 set +e
 output=$(bash plans/ralph.sh 2>&1)
@@ -82,32 +80,43 @@ exit_code=$?
 set -e
 
 assert_exit_code "exits with code 1" "1" "$exit_code"
-assert_contains "mentions circuit breaker" "$output" "CIRCUIT BREAKER: No file changes"
+assert_contains "mentions kickoff not completed" "$output" "Kickoff not completed"
 
-# --- Subtest 2: Same-error circuit breaker ---
+# --- Subtest 2: ralph.sh succeeds with .ralph-kickoff-complete ---
 echo ""
-echo "Subtest: Same-error circuit breaker"
+echo "Subtest: Gate passes with kickoff complete"
 
-setup_temp_repo "$(cat <<'EOF'
-MAX_CALLS_PER_HOUR=100
-MAX_ITERATIONS=10
-CB_NO_PROGRESS_THRESHOLD=10
-CB_SAME_ERROR_THRESHOLD=2
-ALLOWED_TOOLS=""
-EOF
-)"
-export MOCK_SCENARIO=same-error
+setup_temp_repo
+unset RALPH_SKIP_KICKOFF
+echo "2026-01-01T00:00:00Z" > .ralph-kickoff-complete
+export MOCK_SCENARIO=exit-promise
 
 set +e
 output=$(bash plans/ralph.sh 2>&1)
 exit_code=$?
 set -e
 
-assert_exit_code "exits with code 1" "1" "$exit_code"
-assert_contains "mentions same output repeated" "$output" "CIRCUIT BREAKER: Same output repeated"
+assert_exit_code "exits with code 0" "0" "$exit_code"
+assert_contains "runs successfully" "$output" "Ralph complete"
+
+# --- Subtest 3: ralph.sh succeeds with RALPH_SKIP_KICKOFF=1 ---
+echo ""
+echo "Subtest: Gate bypassed with RALPH_SKIP_KICKOFF=1"
+
+setup_temp_repo
+export RALPH_SKIP_KICKOFF=1
+export MOCK_SCENARIO=exit-promise
+
+set +e
+output=$(bash plans/ralph.sh 2>&1)
+exit_code=$?
+set -e
+
+assert_exit_code "exits with code 0" "0" "$exit_code"
+assert_contains "runs successfully" "$output" "Ralph complete"
 
 echo ""
-echo "Circuit breaker tests: $PASS passed, $FAIL failed"
+echo "Kickoff gate tests: $PASS passed, $FAIL failed"
 
 if [ "$FAIL" -gt 0 ]; then
   exit 1

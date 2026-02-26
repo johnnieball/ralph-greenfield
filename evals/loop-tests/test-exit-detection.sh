@@ -62,6 +62,7 @@ EOF
   cp "$SCRIPT_DIR/mock-claude.sh" "$TMPDIR_PATH/bin/claude"
   chmod +x "$TMPDIR_PATH/bin/claude"
   export PATH="$TMPDIR_PATH/bin:$PATH"
+  export RALPH_SKIP_KICKOFF=1
 }
 
 # --- Subtest 1: Promise COMPLETE ---

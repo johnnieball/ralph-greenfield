@@ -92,10 +92,12 @@ if [ -f "$RUN_DIR/git-log.txt" ]; then
   fi
 fi
 
-if [ -f "$RUN_DIR/ralph-output.log" ]; then
+if [ -f "$RUN_DIR/ralph-output.log" ] && [ -f "$RUN_DIR/prd.json" ]; then
   iteration_count=$(grep -c "ITERATION .* of" "$RUN_DIR/ralph-output.log" 2>/dev/null || echo "0")
-  if [ "$iteration_count" -gt 10 ]; then
-    echo "WARNING: More than 10 iterations for 5 stories ($iteration_count iterations)"
+  story_count=$(jq '.userStories | length' "$RUN_DIR/prd.json" 2>/dev/null || echo "0")
+  iteration_threshold=$(( story_count * 2 ))
+  if [ "$iteration_count" -gt "$iteration_threshold" ]; then
+    echo "WARNING: More than ${iteration_threshold} iterations for ${story_count} stories ($iteration_count iterations)"
     flags=$(( flags + 1 ))
   fi
 fi

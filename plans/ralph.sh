@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Ensure bun is on PATH (installed to ~/.bun by default)
+export PATH="$HOME/.bun/bin:$PATH"
+
 # Architecture note: FRESH CONTEXT PER ITERATION
 # ================================================
 # Each iteration spawns a fresh Claude process via --print mode.
@@ -31,6 +34,15 @@ if [ -n "$1" ]; then
     MAX_ITERATIONS="$1"
   else
     echo "Usage: $0 [iterations]"
+    exit 1
+  fi
+fi
+
+# Kickoff gate — ensure PRD has been reviewed before AFK execution
+if [ "${RALPH_SKIP_KICKOFF:-0}" != "1" ]; then
+  if [ ! -f ".ralph-kickoff-complete" ]; then
+    echo "ERROR: Kickoff not completed. Run ./plans/kickoff.sh first."
+    echo "       To skip: RALPH_SKIP_KICKOFF=1 ./plans/ralph.sh"
     exit 1
   fi
 fi
@@ -77,17 +89,28 @@ check_rate_limit() {
   echo "1" >> "$CALL_COUNT_FILE"
 }
 
+fmt_time() {
+  local secs=$1
+  if [ "$secs" -ge 60 ]; then
+    printf "%dm%02ds" $(( secs / 60 )) $(( secs % 60 ))
+  else
+    printf "%ds" "$secs"
+  fi
+}
+
 echo "Starting Ralph - Max iterations: $MAX_ITERATIONS"
 
 TMPFILES=()
 trap 'rm -f "${TMPFILES[@]}"' EXIT
 
+loop_start=$(date +%s)
+
 for (( i=1; i<=MAX_ITERATIONS; i++ )); do
   tmpfile=$(mktemp)
   TMPFILES+=("$tmpfile")
 
-  echo ""
-  echo "======= ITERATION $i of $MAX_ITERATIONS ======="
+  iter_start=$(date +%s)
+  last_ralph_sha_before="$last_ralph_sha"
 
   # Rate limit check
   check_rate_limit
@@ -165,7 +188,53 @@ $ralph_commits"
     exit 1
   fi
 
-  echo "Iteration $i complete. Progress count: $no_progress_count/$CB_NO_PROGRESS_THRESHOLD"
+  # Build end-of-iteration summary line
+  iter_end=$(date +%s)
+  iter_elapsed=$(( iter_end - iter_start ))
+  total_elapsed=$(( iter_end - loop_start ))
+
+  # Parse story progress from prd.json
+  story_done="?"
+  story_total="?"
+  if [ -f "plans/prd.json" ]; then
+    story_total=$(jq '.userStories | length' plans/prd.json 2>/dev/null || echo "?")
+    story_done=$(jq '[.userStories[] | select(.passes == true)] | length' plans/prd.json 2>/dev/null || echo "?")
+  fi
+
+  # Parse current story ID from RALPH_STATUS
+  current_story=$(echo "$result" | sed -n '/---RALPH_STATUS---/,/---END_RALPH_STATUS---/p' | grep -i "CURRENT_STORY:" | head -1 | awk '{print $2}' || echo "")
+
+  # Parse test status from RALPH_STATUS
+  test_status=$(echo "$result" | sed -n '/---RALPH_STATUS---/,/---END_RALPH_STATUS---/p' | grep -i "TESTS_STATUS:" | head -1 | awk '{print $2}' || echo "")
+  test_status=$(echo "$test_status" | tr '[:upper:]' '[:lower:]')
+  if [ -z "$test_status" ]; then
+    test_status="unknown"
+  fi
+
+  # Determine commit status
+  if [ "$latest_ralph_sha" != "$last_ralph_sha_before" ]; then
+    commit_label="committed"
+    # Try to get story ID from latest commit message
+    if [ -z "$current_story" ]; then
+      current_story=$(git log --grep="RALPH" -n 1 --format="%s" 2>/dev/null | grep -oE 'US-[0-9]+' | head -1 || echo "")
+    fi
+    summary_line="[$i/$MAX_ITERATIONS]"
+    if [ -n "$current_story" ]; then
+      # Get story title from prd.json
+      story_title=$(jq -r --arg id "$current_story" '.userStories[] | select(.id == $id) | .title // empty' plans/prd.json 2>/dev/null || echo "")
+      if [ -n "$story_title" ]; then
+        summary_line="$summary_line [$current_story] - $story_title"
+      else
+        summary_line="$summary_line [$current_story]"
+      fi
+    fi
+    summary_line="$summary_line | $story_done/$story_total done | $commit_label | tests: $test_status | cb: $no_progress_count/$CB_NO_PROGRESS_THRESHOLD | $(fmt_time $iter_elapsed) ($(fmt_time $total_elapsed) total)"
+  else
+    summary_line="[$i/$MAX_ITERATIONS] no commit | $story_done/$story_total done | tests: $test_status | cb: $no_progress_count/$CB_NO_PROGRESS_THRESHOLD | $(fmt_time $iter_elapsed) ($(fmt_time $total_elapsed) total)"
+  fi
+
+  echo ""
+  echo "$summary_line"
 done
 
 echo ""

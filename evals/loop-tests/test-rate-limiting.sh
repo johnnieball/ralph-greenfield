@@ -43,6 +43,7 @@ mkdir -p "$TMPDIR_PATH/bin"
 cp "$SCRIPT_DIR/mock-claude.sh" "$TMPDIR_PATH/bin/claude"
 chmod +x "$TMPDIR_PATH/bin/claude"
 export PATH="$TMPDIR_PATH/bin:$PATH"
+export RALPH_SKIP_KICKOFF=1
 export MOCK_SCENARIO=normal
 
 # Run ralph.sh in background, kill after a few seconds
