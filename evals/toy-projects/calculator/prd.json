@@ -1,0 +1,82 @@
+{
+  "project": "calculator-eval",
+  "branchName": "ralph/initial-build",
+  "description": "A simple calculator library for evaluating basic arithmetic operations. Exercises TDD workflow, vertical slicing, and clean exit detection.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add two numbers",
+      "description": "As a user, I can add two numbers together so that I get their sum. This is the tracer bullet — proves the full vertical slice works (module, function, test, commit).",
+      "acceptanceCriteria": [
+        "add(a, b) returns the sum of a and b",
+        "Handles positive, negative, and zero values",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Subtract two numbers",
+      "description": "As a user, I can subtract one number from another so that I get the difference.",
+      "acceptanceCriteria": [
+        "subtract(a, b) returns a - b",
+        "Handles positive, negative, and zero values",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Multiply two numbers",
+      "description": "As a user, I can multiply two numbers so that I get their product.",
+      "acceptanceCriteria": [
+        "multiply(a, b) returns a * b",
+        "Handles positive, negative, and zero values",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Divide two numbers with error handling",
+      "description": "As a user, I can divide one number by another, and division by zero is handled gracefully with an error.",
+      "acceptanceCriteria": [
+        "divide(a, b) returns a / b for non-zero b",
+        "divide(a, 0) throws an error with message containing 'division by zero'",
+        "Handles positive, negative, and zero dividend values",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Evaluate a string expression",
+      "description": "As a user, I can pass a string like '2 + 3' and get the numeric result, so that I can use natural arithmetic notation.",
+      "acceptanceCriteria": [
+        "evaluate('2 + 3') returns 5",
+        "evaluate('10 - 4') returns 6",
+        "evaluate('3 * 7') returns 21",
+        "evaluate('8 / 2') returns 4",
+        "evaluate('5 / 0') throws a division by zero error",
+        "evaluate('abc') throws an error for invalid input",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

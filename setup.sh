@@ -21,6 +21,10 @@ $SED_CMD "s/PROJECT_NAME/$PROJECT_NAME/g" package.json
 $SED_CMD "s/PROJECT_NAME/$PROJECT_NAME/g" plans/prd.json
 $SED_CMD "s/\[Project Name\]/$PROJECT_NAME/g" CLAUDE.md
 
+# Strip eval infrastructure (not needed in real projects)
+rm -rf evals/
+rm -f setup.sh
+
 # Install dependencies
 bun install
 
