@@ -2,5 +2,6 @@
   "project": "PROJECT_NAME",
   "branchName": "ralph/initial-build",
   "description": "DESCRIBE YOUR PROJECT HERE",
+  "_guidance": "Consider including an architectural fitness test story at ~60-70% through the backlog. This story writes tests that verify module boundaries, import direction rules, and code structure constraints from architecture.md. Position it after core modules exist but before the final stories.",
   "userStories": []
 }

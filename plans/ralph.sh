@@ -27,6 +27,10 @@ MAX_CALLS_PER_HOUR=${MAX_CALLS_PER_HOUR:-60}
 MAX_ITERATIONS=${MAX_ITERATIONS:-20}
 CB_NO_PROGRESS_THRESHOLD=${CB_NO_PROGRESS_THRESHOLD:-3}
 CB_SAME_ERROR_THRESHOLD=${CB_SAME_ERROR_THRESHOLD:-5}
+RALPH_MAX_RETRIES=${RALPH_MAX_RETRIES:-3}
+RALPH_RETRY_BACKOFF=${RALPH_RETRY_BACKOFF:-30}
+RATE_LIMIT_WAIT=${RATE_LIMIT_WAIT:-120}
+RATE_LIMIT_MAX_RETRIES=${RATE_LIMIT_MAX_RETRIES:-5}
 
 # Argument: iteration count overrides MAX_ITERATIONS
 if [ -n "$1" ]; then
@@ -47,6 +51,12 @@ if [ "${RALPH_SKIP_KICKOFF:-0}" != "1" ]; then
   fi
 fi
 
+# Automatic log file — mirror all output to timestamped log
+LOG_DIR="logs"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/ralph-$(date +%Y%m%d-%H%M%S).log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
 # jq filters for stream-json output
 stream_text='select(.type == "assistant").message.content[]? | select(.type == "text").text // empty | gsub("\n"; "\r\n") | . + "\r\n\n"'
 final_result='select(.type == "result").result // empty'
@@ -56,6 +66,14 @@ no_progress_count=0
 same_error_count=0
 last_error_line=""
 last_ralph_sha=""
+
+# Run tracking
+completed_iterations=0
+cb_activation_count=0
+rate_limit_total=0
+exit_reason="max_iterations"
+last_test_count="?"
+declare -a story_ids story_elapsed story_names story_acs
 
 # Rate limiting
 CALL_COUNT_FILE=".ralph-call-count"
@@ -98,55 +116,199 @@ fmt_time() {
   fi
 }
 
+detect_rate_limit() {
+  local file="$1"
+  grep -qiE '(hit your limit|rate.?limit|429|quota.?exceeded|too many requests|overloaded|resource_exhausted|try again later)' "$file" 2>/dev/null
+}
+
+print_run_summary() {
+  # Guard: only print if the loop actually started
+  if [ -z "${loop_start:-}" ]; then
+    return
+  fi
+
+  local now end_elapsed
+  now=$(date +%s)
+  end_elapsed=$(( now - loop_start ))
+
+  # Final story counts from prd.json
+  local final_done="?" final_total="?" final_remaining="?"
+  if [ -f "plans/prd.json" ]; then
+    final_total=$(jq '.userStories | length' plans/prd.json 2>/dev/null || echo "?")
+    final_done=$(jq '[.userStories[] | select(.passes == true)] | length' plans/prd.json 2>/dev/null || echo "?")
+    if [ "$final_total" != "?" ] && [ "$final_done" != "?" ]; then
+      final_remaining=$(( final_total - final_done ))
+    fi
+  fi
+
+  echo ""
+  echo "═══════════════════════════════════════════════════"
+  echo "  RALPH RUN SUMMARY"
+  echo "═══════════════════════════════════════════════════"
+  echo "Exit reason:        $exit_reason"
+  echo "Iterations:         $completed_iterations / $MAX_ITERATIONS"
+  echo "Stories passed:     $final_done / $final_total"
+  echo "Stories remaining:  $final_remaining"
+  echo "Total time:         $(fmt_time $end_elapsed)"
+  echo "Total tests:        $last_test_count"
+  echo "CB activations:     $cb_activation_count"
+  echo "Rate limit retries: $rate_limit_total"
+  echo "Log file:           $LOG_FILE"
+
+  # Per-story timing stats
+  local count=${#story_ids[@]}
+  if [ "$count" -gt 0 ]; then
+    echo ""
+    echo "Story Timing:"
+
+    local total_story_time=0
+    local slowest_time=0 slowest_label="" fastest_time=999999 fastest_label=""
+
+    for (( s=0; s<count; s++ )); do
+      local t=${story_elapsed[$s]}
+      total_story_time=$(( total_story_time + t ))
+
+      local label="${story_ids[$s]}"
+      [ -n "${story_names[$s]}" ] && label="$label (${story_names[$s]})"
+
+      if [ "$t" -gt "$slowest_time" ]; then
+        slowest_time=$t
+        slowest_label="$label"
+      fi
+      if [ "$t" -lt "$fastest_time" ]; then
+        fastest_time=$t
+        fastest_label="$label"
+      fi
+
+      local ac_tag=""
+      [ -n "${story_acs[$s]}" ] && [ "${story_acs[$s]}" != "?" ] && ac_tag=" [${story_acs[$s]} ACs]"
+      echo "  ${story_ids[$s]}${ac_tag}: $(fmt_time ${story_elapsed[$s]})  ${story_names[$s]}"
+    done
+
+    local avg_time=$(( total_story_time / count ))
+    echo ""
+    echo "  Average: $(fmt_time $avg_time)"
+    echo "  Slowest: $(fmt_time $slowest_time)  $slowest_label"
+    echo "  Fastest: $(fmt_time $fastest_time)  $fastest_label"
+  fi
+
+  echo "═══════════════════════════════════════════════════"
+}
+
 echo "Starting Ralph - Max iterations: $MAX_ITERATIONS"
+echo "Log file: $LOG_FILE"
 
 TMPFILES=()
-trap 'rm -f "${TMPFILES[@]}"' EXIT
+trap 'print_run_summary 2>/dev/null; rm -f "${TMPFILES[@]}"' EXIT
 
 loop_start=$(date +%s)
 
 for (( i=1; i<=MAX_ITERATIONS; i++ )); do
-  tmpfile=$(mktemp)
-  TMPFILES+=("$tmpfile")
+  rate_limit_retries=0
 
-  iter_start=$(date +%s)
-  last_ralph_sha_before="$last_ralph_sha"
+  # Rate limit retry loop — retries the same iteration without incrementing
+  # the circuit breaker when an API rate limit is detected
+  while true; do
+    tmpfile=$(mktemp)
+    TMPFILES+=("$tmpfile")
 
-  # Rate limit check
-  check_rate_limit
+    iter_start=$(date +%s)
+    last_ralph_sha_before="$last_ralph_sha"
 
-  # Gather RALPH commit history
-  ralph_commits=$(git log --grep="RALPH" -n 10 --format="%H%n%ad%n%B---" --date=short 2>/dev/null || echo "No RALPH commits found")
+    # Rate limit check (hourly call budget)
+    check_rate_limit
 
-  # Build prompt
-  prompt="$(cat plans/prompt.md)
+    # Gather RALPH commit history
+    ralph_commits=$(git log --grep="RALPH" -n 10 --format="%H%n%ad%n%B---" --date=short 2>/dev/null || echo "No RALPH commits found")
+
+    # Build prompt
+    prompt="$(cat plans/prompt.md)
 
 Previous RALPH commits:
 $ralph_commits"
 
-  # Build claude command
-  claude_cmd=(claude --dangerously-skip-permissions --print --output-format stream-json --verbose -p "$prompt")
-  if [ -n "$ALLOWED_TOOLS" ]; then
-    claude_cmd+=(--allowedTools "$ALLOWED_TOOLS")
+    # Build claude command
+    claude_cmd=(claude --dangerously-skip-permissions --print --output-format stream-json --verbose -p "$prompt")
+    if [ -n "$ALLOWED_TOOLS" ]; then
+      claude_cmd+=(--allowedTools "$ALLOWED_TOOLS")
+    fi
+
+    # Run claude with retry for API outages
+    claude_ok=false
+    backoff=$RALPH_RETRY_BACKOFF
+
+    for (( attempt=1; attempt<=RALPH_MAX_RETRIES; attempt++ )); do
+      > "$tmpfile"
+
+      set +e
+      "${claude_cmd[@]}" \
+        | grep --line-buffered '^{' \
+        | tee "$tmpfile" \
+        | jq --unbuffered -rj "$stream_text"
+      set -e
+
+      if [ -s "$tmpfile" ]; then
+        claude_ok=true
+        break
+      fi
+
+      if [ "$attempt" -lt "$RALPH_MAX_RETRIES" ]; then
+        echo ""
+        echo "Claude API error (attempt $attempt/$RALPH_MAX_RETRIES). Retrying in ${backoff}s..."
+        sleep "$backoff"
+        backoff=$(( backoff * 2 ))
+      fi
+    done
+
+    if [ "$claude_ok" = false ]; then
+      echo ""
+      echo "Claude API failed after $RALPH_MAX_RETRIES attempts. Skipping iteration $i."
+      break
+    fi
+
+    # Detect API rate limit in output
+    if detect_rate_limit "$tmpfile"; then
+      rate_limit_retries=$(( rate_limit_retries + 1 ))
+      rate_limit_total=$(( rate_limit_total + 1 ))
+      if [ "$rate_limit_retries" -ge "$RATE_LIMIT_MAX_RETRIES" ]; then
+        echo ""
+        echo "Rate limit: max retries ($RATE_LIMIT_MAX_RETRIES) exceeded. Continuing with iteration."
+        break
+      fi
+      echo ""
+      echo "Rate limit detected. Waiting ${RATE_LIMIT_WAIT}s before retry (attempt $rate_limit_retries/$RATE_LIMIT_MAX_RETRIES)..."
+      sleep "$RATE_LIMIT_WAIT"
+      continue
+    fi
+
+    break  # No rate limit — proceed with this iteration's result
+  done
+
+  # Skip remaining processing if claude failed completely
+  if [ "$claude_ok" = false ]; then
+    continue
   fi
 
-  # Run claude and stream output
-  "${claude_cmd[@]}" \
-    | grep --line-buffered '^{' \
-    | tee "$tmpfile" \
-    | jq --unbuffered -rj "$stream_text"
-
+  completed_iterations=$i
   result=$(jq -r "$final_result" "$tmpfile")
+
+  # Capture test count from iteration output (vitest format: "Tests  N passed")
+  iter_test_count=$(grep -oE 'Tests[[:space:]]+[0-9]+ passed' "$tmpfile" | tail -1 | grep -oE '[0-9]+' | head -1 || echo "")
+  if [ -n "$iter_test_count" ]; then
+    last_test_count="$iter_test_count"
+  fi
 
   # Check <promise> exit signals
   if [[ "$result" == *"<promise>COMPLETE</promise>"* ]] || [[ "$result" == *"<promise>NO MORE TASKS</promise>"* ]]; then
     echo ""
     echo "Ralph complete after $i iterations."
+    exit_reason="complete"
     exit 0
   fi
 
   if [[ "$result" == *"<promise>ABORT</promise>"* ]]; then
     echo "Ralph aborted after $i iterations."
+    exit_reason="abort"
     exit 1
   fi
 
@@ -155,6 +317,7 @@ $ralph_commits"
   if [ "$exit_signal" = "true" ]; then
     echo ""
     echo "Ralph received EXIT_SIGNAL after $i iterations."
+    exit_reason="exit_signal"
     exit 0
   fi
 
@@ -170,11 +333,13 @@ $ralph_commits"
   if [ "$no_progress_count" -ge "$CB_NO_PROGRESS_THRESHOLD" ]; then
     echo ""
     echo "CIRCUIT BREAKER: No file changes in $no_progress_count consecutive iterations. Halting."
+    cb_activation_count=$(( cb_activation_count + 1 ))
+    exit_reason="circuit_breaker_no_progress"
     exit 1
   fi
 
   # Circuit breaker: same error detection
-  current_last_line=$(echo "$result" | tail -1)
+  current_last_line=$(echo "$result" | sed -n '/---RALPH_STATUS---/,/---END_RALPH_STATUS---/p' | grep -i "RECOMMENDATION:" | head -1 || echo "")
   if [ "$current_last_line" = "$last_error_line" ] && [ -n "$current_last_line" ]; then
     same_error_count=$(( same_error_count + 1 ))
   else
@@ -185,6 +350,8 @@ $ralph_commits"
   if [ "$same_error_count" -ge "$CB_SAME_ERROR_THRESHOLD" ]; then
     echo ""
     echo "CIRCUIT BREAKER: Same output repeated $same_error_count times. Halting."
+    cb_activation_count=$(( cb_activation_count + 1 ))
+    exit_reason="circuit_breaker_same_error"
     exit 1
   fi
 
@@ -211,7 +378,14 @@ $ralph_commits"
     test_status="unknown"
   fi
 
-  # Determine commit status
+  # Get AC count for current story
+  ac_count="?"
+  story_title=""
+  if [ -n "$current_story" ] && [ -f "plans/prd.json" ]; then
+    ac_count=$(jq -r --arg id "$current_story" '.userStories[] | select(.id == $id) | .acceptanceCriteria | length' plans/prd.json 2>/dev/null || echo "?")
+  fi
+
+  # Determine commit status and build summary line
   if [ "$latest_ralph_sha" != "$last_ralph_sha_before" ]; then
     commit_label="committed"
     # Try to get story ID from latest commit message
@@ -227,14 +401,31 @@ $ralph_commits"
       else
         summary_line="$summary_line [$current_story]"
       fi
+      # Re-fetch AC count in case current_story was set from commit message
+      if [ "$ac_count" = "?" ]; then
+        ac_count=$(jq -r --arg id "$current_story" '.userStories[] | select(.id == $id) | .acceptanceCriteria | length' plans/prd.json 2>/dev/null || echo "?")
+      fi
     fi
-    summary_line="$summary_line | $story_done/$story_total done | $commit_label | tests: $test_status | cb: $no_progress_count/$CB_NO_PROGRESS_THRESHOLD | $(fmt_time $iter_elapsed) ($(fmt_time $total_elapsed) total)"
+    summary_line="$summary_line | $story_done/$story_total done | $commit_label | tests: $test_status | ${ac_count} ACs | cb: $no_progress_count/$CB_NO_PROGRESS_THRESHOLD | $(fmt_time $iter_elapsed) ($(fmt_time $total_elapsed) total)"
+
+    # Track per-story timing for run summary
+    if [ -n "$current_story" ]; then
+      story_ids+=("$current_story")
+      story_elapsed+=("$iter_elapsed")
+      story_names+=("$story_title")
+      story_acs+=("$ac_count")
+    fi
   else
     summary_line="[$i/$MAX_ITERATIONS] no commit | $story_done/$story_total done | tests: $test_status | cb: $no_progress_count/$CB_NO_PROGRESS_THRESHOLD | $(fmt_time $iter_elapsed) ($(fmt_time $total_elapsed) total)"
   fi
 
   echo ""
   echo "$summary_line"
+
+  # Generate codebase snapshot between iterations
+  if [ -x "plans/snapshot.sh" ]; then
+    plans/snapshot.sh 2>/dev/null || true
+  fi
 done
 
 echo ""

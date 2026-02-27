@@ -8,6 +8,15 @@ Read these files in order:
 
 The last 10 RALPH commits (SHA, date, full message) have been appended to the bottom of this prompt by ralph.sh. Review them to understand what work has been done recently and avoid duplicating effort.
 
+4. `codebase-snapshot.md` — If this file exists, read it. It contains a deterministic snapshot of the codebase generated between iterations: file tree, public exports, import graph, test counts, and alerts. Compare the import graph against `plans/architecture.md` dependency rules. Flag any violations in your iteration notes.
+
+5. `plans/architecture.md` — If this file contains only HTML comment placeholders (`<!-- Generated from PRD at kickoff`), populate it before starting story work:
+   - Read `plans/prd.json` and identify the modules, their responsibilities, and dependency direction
+   - Fill in Modules, Dependency Rules, and Hard Constraints with concrete entries
+   - Keep it under 20 lines total
+   - Commit as `RALPH: chore: populate architecture.md from PRD` before starting the first story
+     If architecture.md is already populated, read it and check planned changes against the dependency rules.
+
 # TASK SELECTION
 
 Pick the **highest priority** user story in `plans/prd.json` where `passes: false`.
@@ -16,11 +25,15 @@ Make each task the smallest possible unit of work. We don't want to outrun our h
 
 If there are **no remaining stories** with `passes: false`, emit `<promise>COMPLETE</promise>` and stop.
 
+If the PRD includes an architectural fitness test story (one that verifies module boundaries, import direction, or code structure constraints by writing tests that analyse source files), schedule it after core modules exist but before the final third of stories. This gives it enough code to check while leaving time for cleanup if violations are found.
+
 ONE task per iteration - this is non-negotiable. Do not batch. Do not "quickly knock out" a second story. One story, done properly, verified, committed.
 
 # EXPLORATION
 
 Explore the repo and fill your context window with relevant information that will allow you to complete the task.
+
+If `codebase-snapshot.md` exists, check its import graph against `plans/architecture.md` dependency rules. If you spot violations in modules you're about to touch, fix them as part of this iteration.
 
 Read existing tests to understand testing patterns before writing new ones. Look at naming conventions, assertion styles, test structure, and how mocks (if any) are used.
 
@@ -62,13 +75,14 @@ If the test errors, fix the error and re-run until it fails correctly.
 
 # GREEN (Minimal Implementation)
 
-Write the simplest code that makes the failing test pass.
+1. You have ONE red test. Write the smallest change that makes it pass.
+2. Run the test. If it passes, STOP. Do not write any more production code.
+3. Return to RED. Write the next failing test.
+4. Only after the new test fails may you write more production code.
 
-Do not add features the test does not require. Do not refactor other code. Do not "improve" beyond what the test demands. Do not add options, configuration, or flexibility that no test exercises.
+This is not advice — it is the process. There is no step where you write production code without a failing test demanding it.
 
-GREEN means the smallest change that makes the current RED test pass. Nothing more. Self-check before writing GREEN code: state in one sentence what you will change. If that sentence contains "and", you're probably doing too much.
-
-If your next RED test passes immediately without any code changes, that's a signal your previous GREEN was too large. One occurrence per story is fine - it means the minimal implementation naturally covered the next AC. Multiple in a row means you need to write smaller GREEN steps.
+If your next RED test passes immediately without code changes, that means your previous GREEN was too large. Once per story is acceptable. Twice or more means you are not following the procedure above — go back and write smaller GREEN steps.
 
 **Verify GREEN - Watch It Pass:**
 
@@ -172,6 +186,7 @@ At the end of your response, ALWAYS include this status block:
 ```
 ---RALPH_STATUS---
 STATUS: IN_PROGRESS | COMPLETE | BLOCKED
+CURRENT_STORY: US-XXX
 TASKS_COMPLETED_THIS_LOOP: <number>
 FILES_MODIFIED: <number>
 TESTS_STATUS: PASSING | FAILING | NOT_RUN
