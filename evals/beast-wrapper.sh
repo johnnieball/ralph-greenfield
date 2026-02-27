@@ -40,6 +40,7 @@ bash ./setup.sh beast-eval
 
 # 4. Copy beast prd.json from ORIGINAL repo's evals (not temp dir — setup.sh strips evals/)
 cp "$SCRIPT_DIR/toy-projects/beast/prd.json" plans/prd.json
+cp "$SCRIPT_DIR/toy-projects/beast/prd.json" "$RUN_DIR/input-prd.json"
 
 echo "Build directory: $TMPDIR_PATH"
 echo "Run directory: $RUN_DIR"

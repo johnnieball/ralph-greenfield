@@ -88,6 +88,7 @@ run_prompt() {
 
   # 4. Copy toy project prd.json over the placeholder
   cp "$toy_dir/prd.json" plans/prd.json
+  cp "$toy_dir/prd.json" "$RUN_DIR/input-prd.json"
 
   # 5. Run ralph.sh, capturing output
   echo "Running Ralph loop (max $max_iterations iterations)..."
