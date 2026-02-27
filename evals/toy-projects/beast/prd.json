@@ -1,0 +1,331 @@
+{
+  "project": "beast-eval",
+  "branchName": "ralph/initial-build",
+  "description": "A static site generator that takes structured JSON content, validates it against a schema, transforms it through a template engine, and outputs styled HTML pages with PDF export. Designed to stress-test infrastructure-first sequencing, schema-driven architecture, file I/O, external process interaction, and multi-layer rendering. Workstreams are semi-independent so partial completion is meaningful.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Define and validate page schema",
+      "description": "Create a Zod schema for the page content model. A page has an id, title, layout (one of 'article', 'listing', 'profile'), metadata (author, date, tags), and a content object whose shape depends on the layout type.",
+      "acceptanceCriteria": [
+        "PageSchema validates a correct page object and returns typed data",
+        "PageSchema rejects a page with a missing required field and the error message names the field",
+        "PageSchema rejects a page with an invalid layout value",
+        "PageSchema validates that content shape matches the layout discriminator: article layout requires {body: string, summary: string}, listing layout requires {items: Array<{title: string, description: string}>}, profile layout requires {name: string, bio: string, skills: string[]}",
+        "PageSchema rejects content that does not match its layout type",
+        "A parsePage(input: unknown) function returns a typed Page object or throws a ValidationError with structured error details"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "WORKSTREAM A (Schema & Validation). Foundation story - the schema drives everything downstream. The discriminated union on layout/content is the key design challenge. Agent must choose: Zod discriminatedUnion, or manual refinement. This choice affects every story that touches content."
+    },
+    {
+      "id": "US-002",
+      "title": "Validate a collection of pages",
+      "description": "Validate a site config containing multiple pages. Detect cross-page issues: duplicate IDs, broken internal links (a page references another page's ID that doesn't exist), and circular tag dependencies.",
+      "acceptanceCriteria": [
+        "parseSite(input) validates an array of pages and returns typed Page[]",
+        "parseSite rejects if any two pages share the same id",
+        "parseSite rejects if a page's content references a pageId (via a link field) that doesn't exist in the collection",
+        "parseSite returns all validation errors at once, not just the first one",
+        "Error objects include the page id and field path where the error occurred"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "WORKSTREAM A. Cross-document validation. Forces the agent to think about the relationship between single-page and multi-page validation. The 'all errors at once' requirement means it can't bail on first error."
+    },
+    {
+      "id": "US-003",
+      "title": "Load pages from JSON files on disk",
+      "description": "Read .json files from a source directory, parse each one as a page, and return the validated collection. Handle malformed JSON files and missing source directory gracefully.",
+      "acceptanceCriteria": [
+        "loadPages(sourceDir) reads all .json files from the directory and returns validated Page[]",
+        "loadPages skips non-.json files in the directory without error",
+        "loadPages throws a SourceDirectoryError if the directory does not exist",
+        "loadPages collects parse errors from individual files and returns a result object: { pages: Page[], errors: LoadError[] } so valid pages are still available even when some files fail",
+        "LoadError includes the filename, line number if available, and the validation error details",
+        "loadPages works with an empty directory and returns { pages: [], errors: [] }"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "WORKSTREAM A. First file system interaction. Agent MUST mock fs for unit tests and use real temp directories for integration tests. The partial-success pattern (valid pages + errors) is a design decision the agent needs to make correctly."
+    },
+    {
+      "id": "US-004",
+      "title": "Article layout template",
+      "description": "Create a template engine that renders an article-layout page into an HTML string. The template receives the page data and a site config (site title, base URL) and produces a complete HTML document.",
+      "acceptanceCriteria": [
+        "renderPage(page, siteConfig) returns a valid HTML string for an article-layout page",
+        "The HTML includes the page title in a <h1> tag",
+        "The HTML includes the article body rendered from markdown to HTML (support headings, paragraphs, bold, italic, links, and code blocks)",
+        "The HTML includes metadata: author name, formatted date, tags as a comma-separated list",
+        "The HTML includes the summary text in a <meta name='description'> tag",
+        "The HTML includes a <title> tag formatted as 'Page Title | Site Title'",
+        "The output is a complete HTML document with doctype, head, and body"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "WORKSTREAM B (Template Engine). Independent from workstream A's validation refinements. Agent needs to choose a markdown library (marked, markdown-it, or similar) and decide on the template approach (string interpolation, template literals, or a template engine). The markdown-to-HTML conversion is a system boundary."
+    },
+    {
+      "id": "US-005",
+      "title": "Listing layout template",
+      "description": "Render a listing-layout page that displays a grid of items, each with a title, description, and a link to another page if the item references one.",
+      "acceptanceCriteria": [
+        "renderPage(page, siteConfig) returns valid HTML for a listing-layout page",
+        "Each item renders as a card with its title in a heading and description in a paragraph",
+        "If an item has a linkedPageId, the card links to that page's URL (/{pageId}.html)",
+        "Items render in the order they appear in the content array",
+        "The listing page includes the page title and metadata like the article layout",
+        "The output reuses the same HTML document shell (doctype, head, body) as the article layout"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "WORKSTREAM B. Second layout forces the agent to extract the shared HTML shell into a reusable function. If the agent doesn't refactor here, the profile layout (US-006) will create painful duplication. Watch for: does it refactor proactively or bolt on?"
+    },
+    {
+      "id": "US-006",
+      "title": "Profile layout template",
+      "description": "Render a profile-layout page that displays a person's name, bio, and skills list.",
+      "acceptanceCriteria": [
+        "renderPage(page, siteConfig) returns valid HTML for a profile-layout page",
+        "The name renders in a <h1> tag",
+        "The bio renders as markdown-to-HTML (same as article body)",
+        "Skills render as a <ul> list with each skill as a <li>",
+        "The profile page uses the same HTML document shell as other layouts",
+        "renderPage dispatches to the correct layout renderer based on page.layout"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "WORKSTREAM B. Third layout. If the agent hasn't extracted the shared shell yet, this story should force it. The dispatch requirement in the last AC makes the routing explicit."
+    },
+    {
+      "id": "US-007",
+      "title": "Apply CSS theme to rendered pages",
+      "description": "Pages are rendered with a CSS theme. The theme is a configuration object with colour palette, font families, and spacing scale. CSS is injected as a <style> tag in the HTML head.",
+      "acceptanceCriteria": [
+        "ThemeConfig defines: primary colour, secondary colour, accent colour, background colour, text colour, heading font, body font, spacing unit (px)",
+        "renderPage accepts an optional ThemeConfig parameter",
+        "When a theme is provided, a <style> tag is added to <head> containing CSS custom properties (--color-primary, --color-secondary, etc.) and base styles that reference them",
+        "The base styles set body font, heading font, background colour, text colour, link colour (accent), and a consistent spacing scale using the spacing unit",
+        "When no theme is provided, the HTML renders with no <style> tag (unstyled)",
+        "The theme affects all three layout types identically"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "WORKSTREAM B. Theming via CSS custom properties - directly analogous to the brand profile system in a real deck generator. Tests must verify CSS output contains the right custom property values. The agent should NOT use Tailwind or any CSS framework - raw CSS custom properties only."
+    },
+    {
+      "id": "US-008",
+      "title": "Build a complete site to an output directory",
+      "description": "Orchestrate the full pipeline: load pages from source directory, validate, render each page with a theme, and write the HTML files to an output directory.",
+      "acceptanceCriteria": [
+        "buildSite({ sourceDir, outputDir, siteConfig, theme? }) reads pages, renders them, and writes .html files to outputDir",
+        "Each page is written as {pageId}.html in the output directory",
+        "The output directory is created if it does not exist",
+        "If the output directory already exists, existing files are cleared before writing",
+        "buildSite returns a BuildResult: { pagesBuilt: number, errors: LoadError[], outputDir: string }",
+        "Pages that fail validation are skipped but reported in errors - valid pages still render",
+        "An index.html is generated listing all successfully built pages with links"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "WORKSTREAM C (Build Pipeline). This is the integration story that ties workstreams A and B together. The agent must use real temp directories for testing - mocking fs here would defeat the purpose. The 'clear output directory' requirement needs careful handling (don't delete the wrong directory)."
+    },
+    {
+      "id": "US-009",
+      "title": "Generate PDF from rendered HTML",
+      "description": "Add PDF export capability. Each rendered HTML page can be converted to a PDF file using a headless browser.",
+      "acceptanceCriteria": [
+        "exportPdf(htmlContent, outputPath) writes a PDF file to the specified path",
+        "The PDF renderer is injected as a dependency (a PdfRenderer interface with a render method), not hardcoded to a specific library",
+        "A PuppeteerPdfRenderer implementation is provided that uses Puppeteer to render HTML to PDF",
+        "The PDF is A4 format with 20mm margins",
+        "If Puppeteer is not available, the function throws a DependencyError with a helpful message",
+        "Unit tests mock the PdfRenderer interface. Integration tests use PuppeteerPdfRenderer with a real headless browser"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "WORKSTREAM C. External process dependency (Puppeteer/headless Chromium). This is the hardest story for TDD - the acceptance criteria involve actual file output from an external tool. Agent must handle: Puppeteer not installed, browser launch failure, render timeout. DI pattern mirrors the task-queue logger story but with a heavier dependency."
+    },
+    {
+      "id": "US-010",
+      "title": "Build pipeline with PDF export option",
+      "description": "Extend buildSite to optionally generate PDFs alongside HTML files.",
+      "acceptanceCriteria": [
+        "buildSite accepts an optional pdf: { enabled: boolean, renderer: PdfRenderer } in its options",
+        "When pdf.enabled is true, each page is exported as both {pageId}.html and {pageId}.pdf",
+        "PDF export failures for individual pages are captured in errors, not fatal - other pages still export",
+        "BuildResult gains a pdfsBuilt count",
+        "When pdf.enabled is false or pdf is omitted, behaviour is identical to US-008 (no PDF files written)"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "WORKSTREAM C. Extends US-008 and depends on US-009. Tests the agent's ability to extend an existing function's options without breaking its API."
+    },
+    {
+      "id": "US-011",
+      "title": "CLI entry point for building a site",
+      "description": "Create a CLI command that runs the build pipeline from the terminal.",
+      "acceptanceCriteria": [
+        "Running 'bun run build-site --source ./content --output ./dist' executes the build pipeline",
+        "The --source flag specifies the source directory (required)",
+        "The --output flag specifies the output directory (defaults to ./dist)",
+        "The --theme flag accepts a path to a JSON theme file (optional)",
+        "The --pdf flag enables PDF export (optional boolean flag)",
+        "On success, prints a summary: 'Built N pages (M PDFs) to ./dist'",
+        "On validation errors, prints each error with filename and field path, then exits with code 1",
+        "On missing source directory, prints a helpful error and exits with code 1",
+        "The CLI parses arguments without external dependencies (use Bun's built-in process.argv or a minimal parser)"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "WORKSTREAM D (CLI & UX). Independent workstream. Tests the agent's ability to build a user-facing interface on top of library code. CLI testing is tricky - the agent needs to decide whether to test by spawning a subprocess or by extracting the logic into a testable function and testing that."
+    },
+    {
+      "id": "US-012",
+      "title": "Watch mode for development",
+      "description": "Add a watch mode that rebuilds the site when source files change.",
+      "acceptanceCriteria": [
+        "Running 'bun run build-site --source ./content --output ./dist --watch' starts in watch mode",
+        "When a .json file in the source directory is added, modified, or deleted, the site rebuilds automatically",
+        "Only changed files are re-validated and re-rendered (incremental rebuild), not the entire site",
+        "The console shows which files changed and the rebuild result",
+        "Watch mode can be stopped with Ctrl+C (SIGINT handler cleans up the file watcher)",
+        "The file watcher is injected as a dependency (a Watcher interface) so tests can use a mock watcher that emits synthetic events"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "WORKSTREAM D. File system watching with incremental rebuilds. This is architecturally complex: the agent needs to track which pages are affected by a file change and only rebuild those. The DI pattern for the watcher is essential for testability. Watch for: does the agent test the incremental logic properly or just test that watch mode starts?"
+    },
+    {
+      "id": "US-013",
+      "title": "Navigation component across pages",
+      "description": "Add a navigation bar to every rendered page showing links to all other pages, with the current page highlighted.",
+      "acceptanceCriteria": [
+        "Every rendered page includes a <nav> element with links to all pages in the site",
+        "The link for the current page has an 'aria-current=\"page\"' attribute and a distinct CSS class",
+        "Navigation links are ordered by page priority (a new optional field on PageSchema, integer, lower = higher priority, default 999)",
+        "renderPage now requires the full page collection (not just the single page) to generate navigation",
+        "Adding the priority field to PageSchema does not break existing pages that omit it"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "WORKSTREAM B (back to templates). Cross-cutting concern that changes renderPage's signature. The agent must update all existing tests that call renderPage. The priority field addition to the schema tests backward compatibility. Watch for: does the agent update workstream A's schema AND workstream B's rendering in a coordinated way?"
+    },
+    {
+      "id": "US-014",
+      "title": "Asset fingerprinting for cache busting",
+      "description": "Generated CSS is written to a separate file with a content hash in the filename for cache busting.",
+      "acceptanceCriteria": [
+        "When a theme is provided, CSS is written to a file named styles.{hash}.css in the output directory, where {hash} is the first 8 characters of the SHA-256 hash of the CSS content",
+        "HTML pages reference the CSS file via a <link> tag instead of an inline <style> tag",
+        "If the theme hasn't changed between builds, the hash and filename remain the same",
+        "If the theme changes, the hash changes and the old CSS file is cleaned up",
+        "The buildSite function handles CSS extraction and hashing internally - renderPage still receives the theme but delegates CSS output to the build pipeline"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": "WORKSTREAM C. Architectural refactor: CSS moves from inline (in renderPage) to extracted file (in buildSite). This forces the agent to split responsibilities between the template engine and the build pipeline. renderPage needs to change: it now emits a <link> tag instead of a <style> tag, meaning it needs to know the CSS filename. The agent must decide how to pass this information."
+    },
+    {
+      "id": "US-015",
+      "title": "Structured logging for build pipeline",
+      "description": "All build pipeline operations emit structured log events for debugging and reporting.",
+      "acceptanceCriteria": [
+        "A Logger interface defines log(event: LogEvent) where LogEvent has: timestamp, level ('info' | 'warn' | 'error'), phase ('load' | 'validate' | 'render' | 'export' | 'write'), message, and optional metadata object",
+        "buildSite accepts an optional logger in its options",
+        "Key events are logged: source directory scanned, each page validated (pass/fail), each page rendered, each file written, build complete summary",
+        "A ConsoleLogger implementation formats events as '[timestamp] [LEVEL] [phase] message' with coloured output",
+        "A FileLogger implementation appends JSON lines to a log file",
+        "If no logger is provided, no logging occurs (null object pattern, not conditional checks)",
+        "Logging failures never crash the build pipeline"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": "WORKSTREAM C. DI and null object pattern. Similar to the task-queue logger story but with more structure (phases, levels). Tests whether the agent uses proper DI vs sprinkling console.log. The null object pattern requirement is explicit - the agent shouldn't use if(logger) checks."
+    },
+    {
+      "id": "US-016",
+      "title": "Page content supports embedded data tables",
+      "description": "Article and listing layouts can include data tables rendered from structured data in the content model.",
+      "acceptanceCriteria": [
+        "PageSchema's article content gains an optional tables field: Array<{id: string, caption: string, headers: string[], rows: string[][]}>",
+        "Article body text can reference a table by id using a marker syntax: {{table:tableId}}",
+        "renderPage replaces table markers with rendered HTML <table> elements",
+        "Tables include <caption>, <thead> with headers, and <tbody> with rows",
+        "Tables are styled by the theme (border colour from secondary, header background from primary at 10% opacity)",
+        "A table marker referencing a non-existent table id renders as a visible error message in the HTML, not a silent failure"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "WORKSTREAM A+B. Schema extension plus template extension. The marker syntax ({{table:id}}) requires the template engine to do a find-and-replace pass after markdown rendering. The visible error for missing tables is important - silent failures hide bugs."
+    },
+    {
+      "id": "US-017",
+      "title": "Content transformation plugins",
+      "description": "The template engine supports a plugin system for content transformation. Plugins run after markdown rendering but before final HTML assembly.",
+      "acceptanceCriteria": [
+        "A ContentPlugin interface defines transform(html: string, page: Page, context: PluginContext): string",
+        "renderPage accepts an optional plugins array in its options",
+        "Plugins execute in array order, each receiving the output of the previous plugin",
+        "A built-in TablePlugin handles the table marker replacement from US-016 (refactor US-016's inline logic into a plugin)",
+        "A built-in HighlightPlugin wraps text between ==markers== in a <mark> tag",
+        "If a plugin throws, the error is caught, logged (if logger available), and the untransformed HTML is used for that plugin's step",
+        "Plugins have no effect on non-article layouts (only applied to layouts with body text)"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "WORKSTREAM B. Plugin architecture with a forced refactor of US-016. The agent must extract the table rendering into a plugin and update all tests. The error isolation (plugin throws but build continues) mirrors the task-queue callback isolation pattern."
+    },
+    {
+      "id": "US-018",
+      "title": "Site-wide search index generation",
+      "description": "The build pipeline generates a JSON search index alongside the HTML files, enabling client-side full-text search.",
+      "acceptanceCriteria": [
+        "buildSite generates a search-index.json file in the output directory",
+        "The index contains an entry per page: {id, title, url, excerpt (first 200 chars of body text), tags}",
+        "Body text is extracted as plain text (HTML tags stripped) before truncation",
+        "Listing pages use the first item's description as the excerpt",
+        "Profile pages use the bio as the excerpt",
+        "The index file is only generated if the site has at least one page",
+        "The search index is valid JSON that can be parsed by a browser's JSON.parse"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": "WORKSTREAM C. Output generation that isn't HTML or PDF - tests the agent's ability to add a new output format to the build pipeline. The plain-text extraction (strip HTML) is a content transformation that could be naive or thorough. Watch for: does the agent handle edge cases like markdown with code blocks?"
+    },
+    {
+      "id": "US-019",
+      "title": "Configuration file for site settings",
+      "description": "Site configuration (title, base URL, theme, output options) is loaded from a site.config.json file instead of being passed programmatically.",
+      "acceptanceCriteria": [
+        "A SiteConfigSchema validates the config file structure using Zod",
+        "loadSiteConfig(configPath) reads and validates the config file",
+        "The config file supports: siteTitle, baseUrl, sourceDir, outputDir, theme (inline or path to theme.json), pdf.enabled, plugins (array of plugin names to activate)",
+        "The CLI (US-011) gains a --config flag that loads settings from the config file",
+        "CLI flags override config file values (CLI takes precedence)",
+        "Missing config file when --config is not specified is fine (use defaults). Missing config file when --config IS specified is an error"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "WORKSTREAM D. Configuration layering (defaults  -> config file  -> CLI flags). This is a common real-world pattern. The agent needs to merge three levels of config with correct precedence. The plugin name resolution (string  -> plugin instance) requires a plugin registry."
+    },
+    {
+      "id": "US-020",
+      "title": "Typed page content with generics",
+      "description": "The page type system uses TypeScript generics so that the content type is inferred from the layout field, providing full type safety throughout the pipeline.",
+      "acceptanceCriteria": [
+        "Page<L extends Layout> is generic where L determines the content type",
+        "Page<'article'> has content typed as ArticleContent, Page<'listing'> has ListingContent, etc.",
+        "parsePage returns a discriminated union: Page<'article'> | Page<'listing'> | Page<'profile'>",
+        "renderPage uses type narrowing so that within the article branch, content is typed as ArticleContent with no casts",
+        "The generic type flows through loadPages, buildSite, and the plugin system without any 'as unknown' or 'as any' casts",
+        "Existing tests continue to pass without modification (the generic types are backward compatible with the previous unparameterised Page type)"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": "WORKSTREAM A. TypeScript generics retrofit - same pattern as task-queue US-010 but threading through a larger system. The 'no casts' requirement is strict. The backward compatibility requirement means the agent can't break the existing type signatures."
+    }
+  ]
+}

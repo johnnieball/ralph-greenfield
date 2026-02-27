@@ -23,6 +23,7 @@ portable_sed() {
 portable_sed "s/PROJECT_NAME/$PROJECT_NAME/g" package.json
 portable_sed "s/PROJECT_NAME/$PROJECT_NAME/g" plans/prd.json
 portable_sed "s/\[Project Name\]/$PROJECT_NAME/g" CLAUDE.md
+portable_sed "s/PROJECT_NAME/$PROJECT_NAME/g" plans/architecture.md
 
 # Strip eval infrastructure (not needed in real projects)
 rm -rf evals/

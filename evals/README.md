@@ -37,13 +37,50 @@ End-to-end eval using real API calls against toy projects. Runs the full Ralph l
 
 **task-queue** — Stress-test project. 10 stories covering architectural decisions, async testing, refactoring existing code, system boundary mocking (timers, file system), cross-module integration, dependency injection, and TypeScript generics. Designed to expose failure modes that trivial projects cannot. Run this after the calculator baseline passes.
 
+### 4. Beast Mode (`evals/beast-wrapper.sh`)
+
+Overnight eval for large, multi-workstream projects. Runs the full Ralph loop in rounds with skip-and-continue logic — when the agent gets stuck on a story, the wrapper marks it as skipped and starts a new round.
+
+```bash
+./evals/run-eval.sh beast              # defaults: 5 rounds, 30 iterations per round
+./evals/run-eval.sh beast 3 20         # 3 rounds, 20 iterations per round
+./evals/beast-wrapper.sh 5 30          # direct invocation
+```
+
+**What it tests:** Infrastructure-first architecture, file I/O, external dependencies (Puppeteer, markdown libraries), schema-driven development with Zod discriminated unions, multi-workstream projects (4 semi-independent workstreams, 20 stories), cross-cutting refactors, plugin architecture, and configuration layering.
+
+**How it works:**
+
+1. Scaffolds a fresh build directory from the template
+2. Copies the beast `prd.json` (20 stories) into `plans/`
+3. Runs `ralph.sh` for up to N iterations per round
+4. When Ralph exits (circuit breaker, max iterations, or timeout):
+   - Detects API-level failures (zero commits + few iterations) and pauses gracefully
+   - Otherwise identifies the stuck story from the output log
+   - Marks it as `"skipped"` in `prd.json` and appends a skip notice to `progress.txt`
+   - Starts a new round — Ralph picks up the next unfinished story
+5. Repeats for up to M rounds or until all stories are done
+6. Produces per-round logs, a final summary, and a scorecard template
+
+**Morning debrief:** Check `evals/runs/<timestamp>-beast/`:
+
+- `summary.txt` — total rounds, per-round breakdown, final tally of passed/skipped/remaining
+- `round-N-ralph-output.log` — full Ralph output for each round
+- `round-N-prd.json` — prd.json snapshot after each round (shows progression)
+- `final-prd.json` — final state of all stories
+- `scorecard.md` — scoring template
+- `paused-build-dir.txt` — if the run paused due to API failure, contains the temp dir path for manual resumption
+
+**Important:** Beast mode is designed for overnight unattended runs. It is NOT included in `./evals/run-eval.sh all` — run it separately. Must be run from a plain terminal (not inside Claude Code).
+
 ## Directory Layout
 
 ```
 evals/
   README.md              # This file
-  run-eval.sh            # Orchestrator: loop | smoke | prompt | all
-  analyse-run.sh         # Post-run analysis of a prompt eval
+  run-eval.sh            # Orchestrator: loop | smoke | prompt | beast | all
+  analyse-run.sh         # Post-run analysis (detects standard vs beast runs)
+  beast-wrapper.sh       # Overnight multi-round runner with skip-and-continue
   scorecard-template.md  # Manual scoring template
   failure-taxonomy.md    # Catalogue of observed failure modes
   prompt-changelog.md    # Track prompt changes vs eval results
@@ -62,6 +99,9 @@ evals/
     task-queue/
       prd.json           # Stress-test PRD with 10 user stories
       expected.md        # Expected outcomes and failure modes to watch for
+    beast/
+      prd.json           # 20-story static site generator PRD
+      expected.md        # Expected outcomes, workstream map, failure points
   runs/                  # Gitignored — prompt eval output goes here
     .gitkeep
 ```

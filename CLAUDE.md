@@ -33,6 +33,7 @@ This project is developed autonomously via `plans/ralph.sh`.
 - Commits use `RALPH:` prefix
 - Protected files: `plans/`, `skills/`, `.ralphrc`, `CLAUDE.md`, `progress.txt`
 - Run with: `./plans/ralph.sh 20`
+- If `plans/architecture.md` exists and has been filled in, read it at the start of each iteration. Check your planned changes against the dependency rules and hard constraints.
 
 ## Progress File Hygiene
 

@@ -28,6 +28,12 @@ If this task involves writing code, read the TDD skill at `skills/tdd/SKILL.md` 
 
 Understand the shape of the code you will be changing. Read the files you will modify. Read their tests. Read their callers. Do not start coding until you understand the local context.
 
+Check which skill reference files are relevant to this story. Scan the filenames in `skills/tdd/` and read any that relate to your planned approach. Examples: if your story involves dependency injection or system boundaries, read `mocking.md`. If it involves module boundaries or public API design, read `deep-modules.md` and `interface-design.md`. If it involves restructuring existing code, read `refactoring.md`. If none are relevant, skip this step - but if you find yourself reaching for a pattern you're unsure about, check the skill files before inventing your own.
+
+If this story requires changing a shared function's signature (adding parameters, changing return types), plan the ripple before writing the first test. List all callers and test files that will need updating. Budget the caller updates into your GREEN step rather than fixing them reactively after tests break.
+
+Before planning your approach, quickly scan the modules you'll be touching. Check: are any functions you'll modify already over ~50 lines? Is the function signature already at 4+ parameters? Is data being threaded through multiple calls unchanged? If so, plan a refactor as part of this iteration's work rather than adding to the debt.
+
 # RED (Write Failing Test)
 
 Write ONE failing test for the current task.
@@ -45,6 +51,7 @@ Write ONE failing test for the current task.
 Run the test. This step is **mandatory. Never skip.**
 
 Confirm:
+
 - The test **fails** (not errors - fails)
 - The failure message is what you expect
 - It fails because the **feature is missing**, not because of a typo or import error
@@ -58,6 +65,10 @@ If the test errors, fix the error and re-run until it fails correctly.
 Write the simplest code that makes the failing test pass.
 
 Do not add features the test does not require. Do not refactor other code. Do not "improve" beyond what the test demands. Do not add options, configuration, or flexibility that no test exercises.
+
+GREEN means the smallest change that makes the current RED test pass. Nothing more. Self-check before writing GREEN code: state in one sentence what you will change. If that sentence contains "and", you're probably doing too much.
+
+If your next RED test passes immediately without any code changes, that's a signal your previous GREEN was too large. One occurrence per story is fine - it means the minimal implementation naturally covered the next AC. Multiple in a row means you need to write smaller GREEN steps.
 
 **Verify GREEN - Watch It Pass:**
 
@@ -78,6 +89,16 @@ After all tests are green, look for refactor candidates:
 - Primitive obsession
 - Unclear names
 
+Check the following triggers against the code you've written or modified this iteration. If any are true, refactor before committing:
+
+- Any function exceeds ~50 lines - extract helpers
+- Any function signature has more than 4 parameters - convert trailing params to an options/config object
+- The same data (e.g. theme, config, logger) is threaded through 3+ function calls unchanged - introduce a context object
+- You have 3+ custom error classes with no shared base - consider a base error class
+- You're copy-pasting a pattern for the third time - extract it
+
+If a needed refactor is too large to do safely within this iteration, note it as technical debt in progress.txt under a "Technical Debt" heading and flag it in RALPH_STATUS RECOMMENDATION field.
+
 **Never refactor while RED.** Get to GREEN first.
 
 Run tests after **each** refactor step. If anything goes red, undo the refactor and try again.
@@ -94,13 +115,12 @@ bun run typecheck
 bun run lint
 ```
 
-If `bun run lint` does not exist, skip it.
-
 **From the Iron Law of Verification:**
 
 If you have not run the verification command **in this message**, you cannot claim it passes. NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE.
 
 The Gate Function:
+
 1. IDENTIFY: What command proves this claim?
 2. RUN: Execute the full command (fresh, complete)
 3. READ: Full output, check exit code, count failures
@@ -141,6 +161,8 @@ Append to `progress.txt` (never replace existing content):
 
 If you discover a **reusable pattern** that future iterations should know about, add it to the `## Codebase Patterns` section at the **top** of `progress.txt`. Only add patterns that are general and reusable, not story-specific details.
 
+Before appending your progress entry, check the length of progress.txt. If it's getting long (over ~100 lines), compress it: summarise all completed stories older than the last 5 into a "Completed Work Summary" section at the top (max 20 lines). Keep the Codebase Patterns section, the Technical Debt section (if any), and the last 5 detailed iteration entries. Remove the detailed entries for older iterations. The goal is to keep progress.txt informative without growing unbounded.
+
 Check if any directories you edited have nearby `CLAUDE.md` files. If you discovered something future iterations should know (API conventions, gotchas, dependencies between files, testing approaches), add it there.
 
 # RALPH_STATUS
@@ -162,6 +184,7 @@ RECOMMENDATION: <one line summary of what to do next>
 ## When to set EXIT_SIGNAL: true
 
 Set EXIT_SIGNAL to **true** when ALL of these conditions are met:
+
 1. All stories in prd.json have `passes: true`
 2. All tests are passing (or no tests exist for valid reasons)
 3. No errors or warnings in the last execution
@@ -173,7 +196,9 @@ Set EXIT_SIGNAL to **true** when ALL of these conditions are met:
 Ralph's circuit breaker and response analyser use these scenarios to detect completion. Each scenario shows the exact conditions and expected behaviour.
 
 ### Scenario 1: Successful Project Completion
+
 **Given**:
+
 - All stories in plans/prd.json have `passes: true`
 - Last test run shows all tests passing
 - No errors in recent output
@@ -182,6 +207,7 @@ Ralph's circuit breaker and response analyser use these scenarios to detect comp
 **When**: You evaluate project status at end of loop
 
 **Then**: You must output:
+
 ```
 ---RALPH_STATUS---
 STATUS: COMPLETE
@@ -197,7 +223,9 @@ RECOMMENDATION: All requirements met, project ready for review
 **Ralph's Action**: Detects EXIT_SIGNAL=true, gracefully exits loop with success message
 
 ### Scenario 2: Test-Only Loop Detected
+
 **Given**:
+
 - Last 3 loops only executed tests (bun run test, etc.)
 - No new files were created
 - No existing files were modified
@@ -206,6 +234,7 @@ RECOMMENDATION: All requirements met, project ready for review
 **When**: You start a new loop iteration
 
 **Then**: You must output:
+
 ```
 ---RALPH_STATUS---
 STATUS: IN_PROGRESS
@@ -221,7 +250,9 @@ RECOMMENDATION: All tests passing, no implementation needed
 **Ralph's Action**: Increments test_only_loops counter, exits after 3 consecutive test-only loops
 
 ### Scenario 3: Stuck on Recurring Error
+
 **Given**:
+
 - Same error appears in last 5 consecutive loops
 - No progress on fixing the error
 - Error message is identical or very similar
@@ -229,6 +260,7 @@ RECOMMENDATION: All tests passing, no implementation needed
 **When**: You encounter the same error again
 
 **Then**: You must output:
+
 ```
 ---RALPH_STATUS---
 STATUS: BLOCKED
@@ -244,7 +276,9 @@ RECOMMENDATION: Stuck on [error description] - human intervention needed
 **Ralph's Action**: Circuit breaker detects repeated errors, opens circuit after 5 loops
 
 ### Scenario 4: No Work Remaining
+
 **Given**:
+
 - All tasks in prd.json are complete
 - You analyse the PRD and find nothing new to implement
 - Code quality is acceptable
@@ -253,6 +287,7 @@ RECOMMENDATION: Stuck on [error description] - human intervention needed
 **When**: You search for work to do and find none
 
 **Then**: You must output:
+
 ```
 ---RALPH_STATUS---
 STATUS: COMPLETE
@@ -268,7 +303,9 @@ RECOMMENDATION: No remaining work, all PRD stories implemented
 **Ralph's Action**: Detects completion signal, exits loop immediately
 
 ### Scenario 5: Making Progress
+
 **Given**:
+
 - Tasks remain in prd.json with `passes: false`
 - Implementation is underway
 - Files are being modified
@@ -277,6 +314,7 @@ RECOMMENDATION: No remaining work, all PRD stories implemented
 **When**: You complete a task successfully
 
 **Then**: You must output:
+
 ```
 ---RALPH_STATUS---
 STATUS: IN_PROGRESS
@@ -292,7 +330,9 @@ RECOMMENDATION: Continue with next task from prd.json
 **Ralph's Action**: Continues loop, circuit breaker stays CLOSED (normal operation)
 
 ### Scenario 6: Blocked on External Dependency
+
 **Given**:
+
 - Task requires external API, library, or human decision
 - Cannot proceed without missing information
 - Have tried reasonable workarounds
@@ -300,6 +340,7 @@ RECOMMENDATION: Continue with next task from prd.json
 **When**: You identify the blocker
 
 **Then**: You must output:
+
 ```
 ---RALPH_STATUS---
 STATUS: BLOCKED
@@ -315,6 +356,7 @@ RECOMMENDATION: Blocked on [specific dependency] - need [what's needed]
 **Ralph's Action**: Logs blocker, may exit after multiple blocked loops
 
 ## What NOT to do
+
 - Do NOT continue with busy work when EXIT_SIGNAL should be true
 - Do NOT run tests repeatedly without implementing new features
 - Do NOT refactor code that is already working fine

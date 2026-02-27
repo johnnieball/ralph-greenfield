@@ -8,14 +8,22 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 usage() {
-  echo "Usage: $0 [loop|smoke|prompt|all] [toy-project] [max-iterations]"
+  echo "Usage: $0 [loop|smoke|prompt|beast|all] [toy-project] [max-iterations]"
   echo ""
   echo "  prompt              Run prompt eval (defaults to calculator, 15 iterations)"
   echo "  prompt <project>    Run prompt eval against a toy project"
   echo "  prompt <project> N  Run prompt eval with N max iterations"
+  echo "  beast               Run beast mode overnight eval (5 rounds, 30 iterations)"
+  echo "  beast <rounds> <N>  Run beast mode with custom rounds and iterations"
   echo ""
   echo "Available toy projects: $(ls "$SCRIPT_DIR/toy-projects/" 2>/dev/null | tr '\n' ' ')"
   exit 1
+}
+
+run_beast() {
+  echo ""
+  echo "=== Beast Mode Eval ==="
+  bash "$SCRIPT_DIR/beast-wrapper.sh" "${1:-}" "${2:-}"
 }
 
 run_loop() {
@@ -189,6 +197,7 @@ case "${1:-}" in
   loop)  run_loop ;;
   smoke) run_smoke ;;
   prompt) run_prompt "${2:-}" "${3:-}" ;;
+  beast) run_beast "${2:-}" "${3:-}" ;;
   all)
     run_loop
     run_smoke

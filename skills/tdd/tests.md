@@ -59,3 +59,12 @@ test("createUser makes user retrievable", async () => {
   expect(retrieved.name).toBe("Alice");
 });
 ```
+
+## HTML Output Testing
+
+- For HTML output testing, `toContain` is fine for simple presence checks ("does the output include a nav element?"). For structural assertions ("does the nav contain exactly 3 links with the second one marked as current?"), use a more targeted approach - either a lightweight DOM parser if available, or scope your string assertions to a specific section of the HTML rather than the full document.
+- Rule of thumb: if your assertion uses `not.toContain` on a string that might appear elsewhere in the HTML, the test is brittle. Narrow the search scope.
+
+## Edge Case Heuristics
+
+- After covering the happy path and the error path for each AC, consider one edge case: what happens with empty input? Input at boundary sizes? The target pattern appearing inside a code block or escaped context? Conflicting but individually valid inputs? You don't need exhaustive edge case coverage - one well-chosen edge case per AC is enough.
