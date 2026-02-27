@@ -206,14 +206,14 @@ loop_start=$(date +%s)
 for (( i=1; i<=MAX_ITERATIONS; i++ )); do
   rate_limit_retries=0
 
+  iter_start=$(date +%s)
+  last_ralph_sha_before="$last_ralph_sha"
+
   # Rate limit retry loop — retries the same iteration without incrementing
   # the circuit breaker when an API rate limit is detected
   while true; do
     tmpfile=$(mktemp)
     TMPFILES+=("$tmpfile")
-
-    iter_start=$(date +%s)
-    last_ralph_sha_before="$last_ralph_sha"
 
     # Rate limit check (hourly call budget)
     check_rate_limit
@@ -272,11 +272,12 @@ $ralph_commits"
       rate_limit_total=$(( rate_limit_total + 1 ))
       if [ "$rate_limit_retries" -ge "$RATE_LIMIT_MAX_RETRIES" ]; then
         echo ""
-        echo "Rate limit: max retries ($RATE_LIMIT_MAX_RETRIES) exceeded. Continuing with iteration."
+        echo "Rate limit: max retries ($RATE_LIMIT_MAX_RETRIES) exceeded. Skipping iteration $i."
+        claude_ok=false
         break
       fi
       echo ""
-      echo "Rate limit detected. Waiting ${RATE_LIMIT_WAIT}s before retry (attempt $rate_limit_retries/$RATE_LIMIT_MAX_RETRIES)..."
+      echo "Rate limit detected. Waiting $(fmt_time $RATE_LIMIT_WAIT) before retry (attempt $rate_limit_retries/$RATE_LIMIT_MAX_RETRIES)..."
       sleep "$RATE_LIMIT_WAIT"
       continue
     fi
