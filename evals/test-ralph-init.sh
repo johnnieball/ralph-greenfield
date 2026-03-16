@@ -185,6 +185,7 @@ set -e
 
 assert_contains ".gitignore has .ralph/logs/" "$tmpdir/.gitignore" ".ralph/logs/"
 assert_contains ".gitignore has .ralph-call-count" "$tmpdir/.gitignore" ".ralph-call-count"
+assert_contains ".gitignore has codebase-snapshot.md" "$tmpdir/.gitignore" "codebase-snapshot.md"
 assert_contains ".gitignore still has node_modules" "$tmpdir/.gitignore" "node_modules/"
 
 # --- Summary ---

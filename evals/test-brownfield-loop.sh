@@ -147,6 +147,30 @@ else
   FAIL=$(( FAIL + 1 ))
 fi
 
+# --- Test 4: Direct ralph.sh invocation auto-detects .ralph/config.sh ---
+echo ""
+echo "Test: Direct ralph.sh invocation finds .ralph/config.sh"
+
+setup_brownfield_repo "$(cat <<'EOF'
+MAX_CALLS_PER_HOUR=100
+MAX_ITERATIONS=10
+CB_NO_PROGRESS_THRESHOLD=5
+CB_SAME_ERROR_THRESHOLD=5
+ALLOWED_TOOLS=""
+EOF
+)"
+export MOCK_SCENARIO=exit-promise
+
+# Invoke ralph.sh directly (not via run.sh) — no RALPH_CONFIG env var
+unset RALPH_CONFIG
+set +e
+output=$(.ralph/engine/ralph.sh 2>&1)
+exit_code=$?
+set -e
+
+assert_exit_code "exits with code 0" "0" "$exit_code"
+assert_contains "detects Ralph complete" "$output" "Ralph complete"
+
 echo ""
 echo "Brownfield loop tests: $PASS passed, $FAIL failed"
 

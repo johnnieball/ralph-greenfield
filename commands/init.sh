@@ -231,6 +231,7 @@ add_gitignore() {
 
 add_gitignore ".ralph/logs/"
 add_gitignore ".ralph-call-count"
+add_gitignore "codebase-snapshot.md"
 
 echo ""
 echo "Ralph initialised in $TARGET_DIR"

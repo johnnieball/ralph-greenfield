@@ -16,6 +16,9 @@ set -e
 
 # Source configuration
 RALPH_CONFIG="${RALPH_CONFIG:-.ralphrc}"
+if [ ! -f "$RALPH_CONFIG" ] && [ -f ".ralph/config.sh" ]; then
+  RALPH_CONFIG=".ralph/config.sh"
+fi
 if [ -f "$RALPH_CONFIG" ]; then
   source "$RALPH_CONFIG"
 fi
