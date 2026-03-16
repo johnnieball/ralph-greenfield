@@ -124,9 +124,9 @@ chmod +x "$TARGET_DIR/.ralph/engine/snapshot.sh"
 # Skills
 cp "$RALPH_HOME"/skills/tdd/* "$TARGET_DIR/.ralph/skills/tdd/"
 
-# Specs — architecture template
-if [ -f "$RALPH_HOME/specs/architecture.md" ]; then
-  cp "$RALPH_HOME/specs/architecture.md" "$TARGET_DIR/.ralph/specs/"
+# Specs — architecture template (use clean template, not repo's populated version)
+if [ -f "$RALPH_HOME/templates/architecture.md" ]; then
+  cp "$RALPH_HOME/templates/architecture.md" "$TARGET_DIR/.ralph/specs/architecture.md"
 fi
 
 # Hooks
@@ -200,16 +200,9 @@ else
 SETTINGS_EOF
 fi
 
-# Copy prd-review skill if not present
+# Copy prd-review skill if not present (already handles both .ralph/ and legacy paths)
 if [ ! -d "$TARGET_DIR/.claude/skills/prd-review" ]; then
   cp -R "$RALPH_HOME/.claude/skills/prd-review" "$TARGET_DIR/.claude/skills/"
-  # Update prd-review paths for .ralph/ layout
-  if [ -f "$TARGET_DIR/.claude/skills/prd-review/SKILL.md" ]; then
-    portable_sed 's|specs/prd-|.ralph/specs/prd-|g' "$TARGET_DIR/.claude/skills/prd-review/SKILL.md"
-    portable_sed 's|`\.ralphrc`|`.ralph/config.sh`|g' "$TARGET_DIR/.claude/skills/prd-review/SKILL.md"
-    portable_sed 's|`RALPH_PLAN`|`RALPH_PLAN` (in `.ralph/config.sh`)|g' "$TARGET_DIR/.claude/skills/prd-review/SKILL.md"
-    portable_sed 's|\./engine/ralph\.sh|.ralph/engine/ralph.sh|g' "$TARGET_DIR/.claude/skills/prd-review/SKILL.md"
-  fi
 fi
 
 # --- CLAUDE.md: append directive if not already present ---

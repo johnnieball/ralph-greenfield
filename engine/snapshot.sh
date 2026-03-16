@@ -50,19 +50,27 @@ build_test_find() {
   IFS=',' read -ra EXT_ARR <<< "$exts"
   IFS=',' read -ra PAT_ARR <<< "$patterns"
   for pat in "${PAT_ARR[@]}"; do
-    # Extract the pattern parts (e.g., *.test.* → test)
-    for ext in "${EXT_ARR[@]}"; do
-      # Construct specific patterns like *.test.ts, *.spec.tsx
-      local stem="${pat%%.*}"  # e.g., "*"
-      local mid="${pat#*.}"    # e.g., "test.*"
-      mid="${mid%%.*}"         # e.g., "test"
+    local ext_part="${pat##*.}"
+    if [[ "$pat" == *.* ]] && [[ "$ext_part" != "*" ]]; then
+      # Pattern has a concrete extension (e.g., *_test.py) — use as-is
       if [ "$first" = true ]; then
-        printf -- "-name '*.%s.%s'" "$mid" "$ext"
+        printf -- "-name '%s'" "$pat"
         first=false
       else
-        printf -- " -o -name '*.%s.%s'" "$mid" "$ext"
+        printf -- " -o -name '%s'" "$pat"
       fi
-    done
+    else
+      # Pattern ends with .* or has no extension — combine with each ext
+      local base="${pat%.\*}"  # Strip trailing .* if present
+      for ext in "${EXT_ARR[@]}"; do
+        if [ "$first" = true ]; then
+          printf -- "-name '%s.%s'" "$base" "$ext"
+          first=false
+        else
+          printf -- " -o -name '%s.%s'" "$base" "$ext"
+        fi
+      done
+    fi
   done
 }
 

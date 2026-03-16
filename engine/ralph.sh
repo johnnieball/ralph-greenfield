@@ -46,8 +46,13 @@ SNAPSHOT_TEST_PATTERNS="${SNAPSHOT_TEST_PATTERNS:-*.test.*,*.spec.*}"
 SNAPSHOT_PARSER="${SNAPSHOT_PARSER:-typescript}"
 TEST_COUNT_REGEX="${TEST_COUNT_REGEX:-Tests[[:space:]]+[0-9]+ passed}"
 
-# Add tool runtime to PATH
-export PATH="$EXTRA_PATH:$PATH"
+# Add tool runtime to PATH (skip if EXTRA_PATH is empty)
+if [ -n "$EXTRA_PATH" ]; then
+  export PATH="$EXTRA_PATH:$PATH"
+fi
+
+# Export snapshot config for snapshot.sh subprocess
+export SNAPSHOT_SOURCE_DIR SNAPSHOT_FILE_EXTENSIONS SNAPSHOT_TEST_PATTERNS SNAPSHOT_PARSER
 
 # Arguments: [iterations] [plan-name]
 if [ -n "$1" ]; then
@@ -64,7 +69,7 @@ fi
 
 # Resolve PRD path: CLI arg > RALPH_PLAN config
 if [ -z "$RALPH_PLAN" ]; then
-  echo "ERROR: No plan selected. Set RALPH_PLAN in .ralphrc or pass as second arg."
+  echo "ERROR: No plan selected. Set RALPH_PLAN in $RALPH_CONFIG or pass as second arg."
   echo "  Usage: $0 [iterations] <plan-name>"
   echo "Available plans:"
   for f in $SPECS_DIR/prd-*.json; do

@@ -26,7 +26,6 @@ portable_sed() {
 
 # Replace placeholders
 portable_sed "s/PROJECT_NAME/$PROJECT_NAME/g" package.json
-portable_sed "s/\[Project Name\]/$PROJECT_NAME/g" CLAUDE.md
 
 # Strip eval infrastructure (not needed in scaffolded projects)
 rm -rf evals/
@@ -41,8 +40,23 @@ chmod +x engine/ralph.sh
 touch bun.lock
 bash commands/init.sh --stack bun-typescript .
 
-# Greenfield: overwrite CLAUDE.md with the full template (init only adds directive)
-portable_sed "s/\[Project Name\]/$PROJECT_NAME/g" CLAUDE.md
+# Write project-specific CLAUDE.md (init creates a one-line directive)
+cat > CLAUDE.md << CLAUDEEOF
+# $PROJECT_NAME
+
+## Commands
+
+- \`bun run dev\` — watch mode (\`bun run --watch src/index.ts\`)
+- \`bun run test\` — run tests (Vitest)
+- \`bun run typecheck\` — TypeScript type checking
+- \`bun run lint\` — linting (oxlint)
+
+## Codebase Patterns
+
+(Patterns will be added here by Ralph during iterations)
+
+<!-- Ralph --> Read .ralph/CLAUDE-ralph.md for autonomous development loop instructions.
+CLAUDEEOF
 
 # Replace architecture.md placeholder
 if [ -f .ralph/specs/architecture.md ]; then

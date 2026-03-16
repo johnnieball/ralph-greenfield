@@ -77,9 +77,23 @@ EOF
 touch "$TARGET/bun.lock"
 "$TEMPLATE_DIR/commands/init.sh" --stack bun-typescript "$TARGET"
 
-# --- Greenfield-specific: write full CLAUDE.md (not just the directive) ---
-cp "$TEMPLATE_DIR/CLAUDE.md" "$TARGET/CLAUDE.md"
-portable_sed "s/\[Project Name\]/$PROJECT_NAME/g" "$TARGET/CLAUDE.md"
+# --- Greenfield-specific: write project CLAUDE.md (init already added directive) ---
+cat > "$TARGET/CLAUDE.md" << CLAUDEEOF
+# $PROJECT_NAME
+
+## Commands
+
+- \`bun run dev\` — watch mode (\`bun run --watch src/index.ts\`)
+- \`bun run test\` — run tests (Vitest)
+- \`bun run typecheck\` — TypeScript type checking
+- \`bun run lint\` — linting (oxlint)
+
+## Codebase Patterns
+
+(Patterns will be added here by Ralph during iterations)
+
+<!-- Ralph --> Read .ralph/CLAUDE-ralph.md for autonomous development loop instructions.
+CLAUDEEOF
 
 # Replace architecture.md placeholder
 if [ -f "$TARGET/.ralph/specs/architecture.md" ]; then

@@ -117,6 +117,7 @@ else
 fi
 
 # 7. Assert placeholder replacement and Ralph directive
+assert_contains "CLAUDE.md has project name" "CLAUDE.md" "test-project"
 assert_contains "CLAUDE.md has Ralph directive" "CLAUDE.md" "<!-- Ralph -->"
 assert_contains "package.json contains test-project" "package.json" "test-project"
 
